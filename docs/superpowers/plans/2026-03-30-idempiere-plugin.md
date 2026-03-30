@@ -30,8 +30,8 @@ idempiere-tw-ai-assistant/
 │   │   ├── AIAssistantModelFactory.xml
 │   │   └── AIChatFormFactory.xml
 │   ├── resources/
-│   │   └── 2pack/
-│   │       └── AI_Assistant_2Pack.zip    # PackOut.xml inside
+│   │   └── META-INF/
+│   │       └── 2Pack_1.0.0.zip           # PackOut.xml inside (Incremental2PackActivator naming convention)
 │   └── src/idempiere/ai/assistant/
 │       ├── AIAssistantActivator.java      # Incremental2PackActivator
 │       ├── model/
@@ -152,8 +152,21 @@ public class AIAssistantActivator extends Incremental2PackActivator {
 
     @Override
     protected void afterPackIn() {
-        // Grant default role access to AI Chat form if needed
-        // (2Pack handles this via role access entries)
+        // Grant all active roles access to the AI Chat form.
+        // Without this, no role can open the form after install.
+        String sql = "INSERT INTO AD_Form_Access (AD_Form_Access_UU, AD_Client_ID, AD_Org_ID, "
+            + "AD_Role_ID, AD_Form_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
+            + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, f.AD_Form_ID, 'Y', "
+            + "now(), 0, now(), 0, 'Y' "
+            + "FROM AD_Role r, AD_Form f "
+            + "WHERE f.ClassName = 'idempiere.ai.assistant.form.AIChatForm' "
+            + "AND r.IsActive = 'Y' "
+            + "AND NOT EXISTS (SELECT 1 FROM AD_Form_Access fa "
+            + "  WHERE fa.AD_Role_ID = r.AD_Role_ID AND fa.AD_Form_ID = f.AD_Form_ID)";
+        int count = DB.executeUpdate(sql, null);
+        if (count > 0) {
+            log.info("Granted AI Chat form access to " + count + " roles");
+        }
     }
 }
 ```
@@ -177,7 +190,7 @@ git commit -m "feat: plugin scaffold — pom.xml, MANIFEST.MF, Activator"
 ### Task 9: 2Pack — AI_ChatLog Table + Window + Form + Menu
 
 **Files:**
-- Create: `plugin/resources/2pack/AI_Assistant_2Pack.zip` (contains PackOut.xml)
+- Create: `plugin/resources/2pack/2Pack_1.0.0.zip` (contains PackOut.xml)
 
 This task creates the iDempiere Application Dictionary entries via 2Pack XML. The 2Pack is loaded automatically by `Incremental2PackActivator` on first bundle start.
 
@@ -231,7 +244,7 @@ If using the Application Dictionary UI:
 3. Create Window `AI Chat Log` with one Tab
 4. Create Form `AI Chat` pointing to the Java class
 5. Create Menu entry
-6. Use Pack Out to export to `resources/2pack/AI_Assistant_2Pack.zip`
+6. Use Pack Out to export to `resources/2pack/2Pack_1.0.0.zip`
 
 - [ ] **Step 3: Verify 2Pack structure matches tw-invoice reference**
 
@@ -466,11 +479,16 @@ public class AIChatService {
     private final String hmacSecret;
 
     public AIChatService() {
-        // Read from system properties or idempiere.properties
         this.serviceUrl = System.getProperty("AI_SERVICE_URL", "http://localhost:8900");
         this.hmacSecret = System.getProperty("AI_HMAC_SECRET", "");
         if (hmacSecret.isEmpty()) {
-            log.severe("AI_HMAC_SECRET system property not set!");
+            log.severe("AI_HMAC_SECRET system property not set! AI service will refuse requests.");
+        }
+    }
+
+    private void validateConfig() throws AIChatException {
+        if (hmacSecret.isEmpty()) {
+            throw new AIChatException("AI 服務尚未設定，請聯繫管理員設定 AI_HMAC_SECRET");
         }
     }
 
@@ -479,6 +497,7 @@ public class AIChatService {
      * Throws AIChatException with user-friendly message on error.
      */
     public AIChatResponse ask(String question, Properties ctx) throws AIChatException {
+        validateConfig(); // Refuse if HMAC secret not configured
         int adUserId = Env.getAD_User_ID(ctx);
         int adRoleId = Env.getAD_Role_ID(ctx);
         int adClientId = Env.getAD_Client_ID(ctx);
@@ -574,9 +593,29 @@ public class AIChatService {
 
     /**
      * Get list of org IDs accessible by this role.
-     * Queries AD_Role_OrgAccess directly (MRole.getOrgAccess is private).
+     * Handles IsAccessAllOrgs=Y (SuperUser) by returning all client orgs.
      */
     private List<Integer> getAccessibleOrgIds(int adRoleId, int adClientId) {
+        // Check if role has access to all orgs
+        MRole role = MRole.get(Env.getCtx(), adRoleId);
+        if (role.isAccessAllOrgs()) {
+            // SuperUser or role with IsAccessAllOrgs=Y: return all orgs for this client
+            List<Integer> allOrgs = new ArrayList<>();
+            allOrgs.add(0); // * org
+            String sql = "SELECT AD_Org_ID FROM AD_Org WHERE AD_Client_ID=? AND IsActive='Y' AND AD_Org_ID > 0";
+            try (PreparedStatement pstmt = DB.prepareStatement(sql, null)) {
+                pstmt.setInt(1, adClientId);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    allOrgs.add(rs.getInt(1));
+                }
+            } catch (Exception e) {
+                log.log(Level.SEVERE, "Failed to get all orgs", e);
+            }
+            return allOrgs;
+        }
+
+        // Normal role: query AD_Role_OrgAccess (MRole.getOrgAccess is private)
         List<Integer> orgIds = new ArrayList<>();
         String sql = "SELECT AD_Org_ID FROM AD_Role_OrgAccess "
                    + "WHERE AD_Role_ID=? AND AD_Client_ID=? AND IsActive='Y'";
