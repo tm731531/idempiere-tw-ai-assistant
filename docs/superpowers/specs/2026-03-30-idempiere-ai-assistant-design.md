@@ -1,9 +1,9 @@
 # iDempiere AI Assistant — Design Spec
 
 **Date:** 2026-03-30
-**Status:** Approved (Rev 3 — integration joint fixes)
+**Status:** Approved (Rev 4 — architect/dev/PM fixes)
 **Author:** Tom + Claude
-**Reviewed by:** R1: Opus+Haiku (components), R2: Opus (verification), R3: 2×Opus (integration joints)
+**Reviewed by:** R1: Opus+Haiku (components), R2: Opus (verify), R3: 2×Opus (joints), R4: 3×Opus (arch/dev/PM)
 
 ## Overview
 
@@ -87,6 +87,7 @@ iDempiere Plugin:
 7. **No PII in errors** — Exception messages return generic text, never include data from DB or LLM
 8. **Input sanitization** — User questions are stripped of `[PII_*]` patterns before any LLM call to prevent prompt injection
 9. **Org-level filtering** — All SQL queries include AD_Org_ID filter based on user's role access
+10. **Context params from request only** — `ad_client_id` and `org_ids` are ALWAYS injected from the HTTP request context into query params, NEVER from LLM output (prevents prompt injection changing security scope)
 
 ## iDempiere Plugin Components
 
@@ -200,12 +201,14 @@ Before any LLM call, strip potential injection patterns from user question:
 - Remove `[C_*]`, `[T_*]`, `[P_*]`, `[E_*]`, `[A_*]`, `[D_*]` patterns
 - This prevents users from referencing masking tokens in their questions
 
-### 4. LangGraph Router
+### 4. Question Classifier + Query Selector (single Sonnet call)
 
-Uses Llama 8B to classify question into categories:
-- `database_query` → needs to query DB, select a pre-defined SQL
+Phase 1 uses a single Sonnet call to classify the question AND select the matching query simultaneously (3 queries don't need a separate cheap classifier). Categories:
+- `database_query` → matched a pre-defined SQL, params extracted
 - `general_knowledge` → answer from LLM directly (no DB needed)
 - `clarification` → question too vague, ask user to be more specific
+
+Phase 2 (20+ queries): may split into cheap classifier (Llama 8B) + selector (Sonnet) for cost optimization.
 
 ### 5. Query Executor
 
@@ -308,7 +311,6 @@ Simple per-user rate limit in Phase 1:
 
 **Python AI Service:**
 - FastAPI + uvicorn
-- LangGraph (routing)
 - langchain-anthropic + langchain-groq (models)
 - psycopg2 + psycopg2.pool.ThreadedConnectionPool (PostgreSQL read-only, thread-safe pooling)
 - pydantic (data validation)
