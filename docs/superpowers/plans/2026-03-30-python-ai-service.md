@@ -101,6 +101,9 @@ DB_USER=ai_readonly
 DB_PASSWORD=xxxx
 HMAC_SECRET=change-me-to-a-random-string
 SERVICE_PORT=8900
+MOCK_LLM=true
+# MOCK_LLM=true  → returns canned responses, no LLM API calls, no token cost
+# MOCK_LLM=false → real LLM calls (costs money)
 ```
 
 - [ ] **Step 3: Create .gitignore (project root)**
@@ -122,8 +125,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
+
+# API keys not required when MOCK_LLM=true (saves setup hassle during plugin dev)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "mock-key") if MOCK_LLM else os.environ["ANTHROPIC_API_KEY"]
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "mock-key") if MOCK_LLM else os.environ["GROQ_API_KEY"]
 HMAC_SECRET = os.environ["HMAC_SECRET"]
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -827,10 +833,11 @@ Reply in the same language as the user's question. Be brief and friendly."""
 
 ```python
 # service/app/llm/caller.py
-from langchain_anthropic import ChatAnthropic
-from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage
-from app.config import ANTHROPIC_API_KEY, GROQ_API_KEY
+import json
+import logging
+from app.config import ANTHROPIC_API_KEY, GROQ_API_KEY, MOCK_LLM
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_CHAIN = {
     "sonnet": "llama_70b",
@@ -838,28 +845,49 @@ FALLBACK_CHAIN = {
     "llama_8b": "llama_70b",
 }
 
+# Mock response for plugin development — returns valid JSON so the full
+# pipeline (HMAC → parse → router → response) can be tested without LLM cost.
+MOCK_CLASSIFY_RESPONSE = json.dumps({
+    "category": "database_query",
+    "query_name": "top_customers_by_revenue",
+    "params": {"date_from": "2026-01-01", "date_to": "2026-03-31", "limit": 5},
+    "reason": "MOCK MODE — no LLM called",
+})
+MOCK_ANSWER_RESPONSE = "[MOCK] This is a test response. LLM is disabled (MOCK_LLM=true). The pipeline is working correctly."
+
 
 class LLMCaller:
-    """Call LLMs with automatic fallback. Returns (content, total_tokens)."""
+    """Call LLMs with automatic fallback. Returns (content, total_tokens).
+    When MOCK_LLM=true, returns canned responses without any API call."""
 
     def __init__(self):
-        self.models = {
-            "sonnet": ChatAnthropic(
-                model="claude-sonnet-4-6", max_tokens=4096,
-                api_key=ANTHROPIC_API_KEY, timeout=25.0,
-            ),
-            "llama_70b": ChatGroq(
-                model="llama-3.3-70b-versatile", max_tokens=4096,
-                api_key=GROQ_API_KEY, timeout=25.0,
-            ),
-            "llama_8b": ChatGroq(
-                model="llama-3.1-8b-instant", max_tokens=2048,
-                api_key=GROQ_API_KEY, timeout=25.0,
-            ),
-        }
+        if MOCK_LLM:
+            logger.warning("MOCK_LLM=true — LLM calls will return canned responses (no API cost)")
+            self.models = {}
+        else:
+            from langchain_anthropic import ChatAnthropic
+            from langchain_groq import ChatGroq
+            self.models = {
+                "sonnet": ChatAnthropic(
+                    model="claude-sonnet-4-6", max_tokens=4096,
+                    api_key=ANTHROPIC_API_KEY, timeout=25.0,
+                ),
+                "llama_70b": ChatGroq(
+                    model="llama-3.3-70b-versatile", max_tokens=4096,
+                    api_key=GROQ_API_KEY, timeout=25.0,
+                ),
+                "llama_8b": ChatGroq(
+                    model="llama-3.1-8b-instant", max_tokens=2048,
+                    api_key=GROQ_API_KEY, timeout=25.0,
+                ),
+            }
 
     def call(self, model_name: str, system_prompt: str, user_message: str) -> tuple[str, int]:
         """Call a model with fallback. Returns (content, total_tokens)."""
+        if MOCK_LLM:
+            return self._mock_call(system_prompt, user_message)
+
+        from langchain_core.messages import HumanMessage, SystemMessage
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
@@ -880,6 +908,12 @@ class LLMCaller:
                     f"All models failed: primary({model_name})={primary_err}, "
                     f"fallback({fallback})={fallback_err}"
                 )
+
+    def _mock_call(self, system_prompt: str, user_message: str) -> tuple[str, int]:
+        """Return canned response for testing. Detects classify vs answer by prompt content."""
+        if "classify" in system_prompt.lower() or "query_name" in system_prompt.lower():
+            return MOCK_CLASSIFY_RESPONSE, 0
+        return MOCK_ANSWER_RESPONSE, 0
 
     def _extract_tokens(self, response) -> int:
         """Extract total token usage from LLM response metadata."""

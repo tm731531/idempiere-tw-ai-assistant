@@ -55,17 +55,33 @@ iDempiere Plugin (Java)
 ## Running (Python Service)
 ```bash
 cd service/
-cp .env.example .env  # fill in API keys + DB credentials + HMAC_SECRET
+cp .env.example .env  # fill in DB credentials + HMAC_SECRET
 pip install -r requirements.txt
-python -m app.main    # starts on localhost:8900
+
+# Mock mode (plugin development, no token cost):
+MOCK_LLM=true python -m app.main
+
+# Real mode (requires API keys in .env):
+MOCK_LLM=false python -m app.main
 ```
 
 ## Testing
 ```bash
+# Unit tests (all mocked, no DB/API needed):
 cd service/
 pytest tests/ -v
-# All tests use mocks — no real DB or API keys needed
+
+# Integration test (mock mode, real DB, no LLM cost):
+# 1. Set MOCK_LLM=true in .env
+# 2. python -m app.main
+# 3. Deploy plugin JAR → open AI Chat form → verify round-trip
 ```
+
+## Mock Mode (MOCK_LLM=true)
+- HMAC, rate limit, DB queries, PII masking all work normally
+- LLM calls return canned responses (no API cost, no API keys needed)
+- Use this for plugin development and end-to-end testing
+- Switch to MOCK_LLM=false + real API keys for production
 
 ## Phase 1 Done Criteria
 - All pytest pass (~34 tests)

@@ -205,9 +205,50 @@ IMPLEMENT SECOND (depends on Python service running):
 
 | Config Item | Where (Python) | Where (Java) |
 |-------------|---------------|-------------|
-| HMAC shared secret | `.env` → `HMAC_SECRET` | `idempiere.properties` → `AI_HMAC_SECRET` or system property |
-| Python service URL | N/A (it IS the service) | `idempiere.properties` → `AI_SERVICE_URL=http://localhost:8900` |
+| HMAC shared secret | `.env` → `HMAC_SECRET` | System property → `-DAI_HMAC_SECRET` |
+| Python service URL | N/A (it IS the service) | `MSysConfig` → `AI_SERVICE_URL=http://localhost:8900` |
 | Anthropic API key | `.env` → `ANTHROPIC_API_KEY` | N/A (Python handles LLM) |
 | Groq API key | `.env` → `GROQ_API_KEY` | N/A (Python handles LLM) |
 | DB read-only user | `.env` → `DB_USER`, `DB_PASSWORD` | N/A (Python connects directly) |
 | DB host/port/name | `.env` → `DB_HOST`, `DB_PORT`, `DB_NAME` | Already configured in iDempiere |
+| **Mock LLM mode** | `.env` → `MOCK_LLM=true/false` | N/A |
+
+---
+
+## Test Mode (MOCK_LLM)
+
+For development and plugin testing WITHOUT burning LLM tokens:
+
+```
+service/.env:
+  MOCK_LLM=true          ← Python returns canned responses, no API calls
+  ANTHROPIC_API_KEY=      ← not needed in mock mode
+  GROQ_API_KEY=           ← not needed in mock mode
+  HMAC_SECRET=test123     ← still required (HMAC still verified)
+  DB_PASSWORD=xxx         ← still required (DB queries still run)
+```
+
+**What works in mock mode:**
+- ✅ HMAC authentication (full verification)
+- ✅ Rate limiting (enforced)
+- ✅ Input sanitization (PII tokens stripped)
+- ✅ Database queries (real SQL against real iDempiere DB)
+- ✅ PII masking/unmasking (real tokenization on real data)
+- ✅ JSON serialization/deserialization
+- ✅ Plugin → HTTP → Python → response → Plugin (full round-trip)
+- ❌ LLM classification (returns fixed "database_query" + first registered query)
+- ❌ LLM answer generation (returns "[MOCK] test response" text)
+
+**Development workflow:**
+```
+Phase A: Plugin development (MOCK_LLM=true)
+  1. Start Python: MOCK_LLM=true python -m app.main
+  2. Deploy plugin JAR to iDempiere
+  3. Open AI Chat form → type question → verify round-trip works
+  4. All HTTP/HMAC/JSON/error handling tested, zero token cost
+
+Phase B: Full integration (MOCK_LLM=false)
+  1. Set MOCK_LLM=false, fill in real API keys
+  2. Restart Python service
+  3. Same plugin, now gets real AI answers
+```

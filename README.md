@@ -142,7 +142,18 @@ SERVICE_PORT=8900                AI_SERVICE_URL in MSysConfig table
 
 Key principle: **Java side never touches LLM API keys.** All AI calls go through Python. Java only needs the HMAC shared secret.
 
-### Where to get API keys
+### Test Mode (MOCK_LLM) — develop without burning tokens
+
+```
+service/.env:
+  MOCK_LLM=true       ← returns canned responses, no LLM API calls, $0 cost
+  ANTHROPIC_API_KEY=   ← not needed in mock mode
+  GROQ_API_KEY=        ← not needed in mock mode
+```
+
+In mock mode, the full pipeline still works (HMAC, rate limit, DB queries, PII masking) — only the LLM call is replaced with a fixed response. This lets you develop and test the Java plugin without any API cost.
+
+### Where to get API keys (for real mode)
 
 | Key | Source | Cost |
 |-----|--------|------|
