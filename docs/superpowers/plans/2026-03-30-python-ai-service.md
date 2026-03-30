@@ -1465,7 +1465,7 @@ Expected: 5 passed
 ```bash
 pytest tests/ -v
 ```
-Expected: All passed (~28 tests)
+Expected: All passed (35 tests: 10+6+5+4+5+5)
 
 - [ ] **Step 7: Commit**
 
@@ -1571,7 +1571,7 @@ sig = hmac.new(os.environ["HMAC_SECRET"].encode(), body_bytes, hashlib.sha256).h
 
 # Call with exact same bytes used for HMAC
 result = subprocess.run([
-    "curl", "-s", "-X", "POST", "http://localhost:8900/ask",
+    "curl", "-s", "-X", "POST", "http://localhost:8900/v1/ask",
     "-H", "Content-Type: application/json",
     "-H", f"X-HMAC-Signature: {sig}",
     "-d", body_bytes.decode(),
