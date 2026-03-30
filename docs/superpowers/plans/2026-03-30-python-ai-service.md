@@ -1,91 +1,59 @@
-# Python AI Service — Implementation Plan
+# Python AI Service — Implementation Plan (Rev 2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a FastAPI service that receives natural language questions, queries iDempiere's PostgreSQL with pre-defined SQL, masks PII, calls external LLMs, and returns answers with PII restored.
 
-**Architecture:** FastAPI receives questions from iDempiere plugin via HTTP POST. LangGraph routes questions to the appropriate model. Pre-defined SQL queries run against a read-only PostgreSQL account. PII is masked before LLM calls and restored after.
+**Architecture:** FastAPI receives HMAC-authenticated requests from iDempiere plugin via HTTP POST. Questions are routed to the appropriate LLM. Pre-defined SQL queries run against a read-only PostgreSQL account with org-level filtering. PII is masked (request-scoped via contextvars) before LLM calls and restored after. All LLM calls are async via `asyncio.to_thread()`.
 
-**Tech Stack:** Python 3.11+, FastAPI, LangGraph, langchain-anthropic, langchain-groq, psycopg2, pydantic, pytest
+**Tech Stack:** Python 3.11+, FastAPI, LangGraph, langchain-anthropic, langchain-groq, psycopg2 + pool, pydantic, pytest
 
----
-
-## Review Fixes (Rev 2 — 2026-03-30)
-
-The following changes were identified during team review (Opus: iDempiere, Haiku: Python + Security) and MUST be applied during implementation:
-
-### CRITICAL fixes (apply to relevant tasks):
-
-| # | Fix | Affects Task |
-|---|-----|-------------|
-| 1 | Add HMAC-SHA256 auth to `/ask` endpoint (shared secret in .env) | Task 6 (main.py) |
-| 2 | Error responses must return generic message, NEVER include PII or traceback | Task 6 (main.py) |
-| 3 | PII mapping must use `contextvars.ContextVar` for thread-safe request isolation | Task 2 (masker.py), Task 5 (router.py) |
-| 4 | Add input sanitization: strip `[PII_*]` patterns from user question before LLM | Task 5 (router.py) |
-| 5 | Wrap all LLM `.invoke()` calls in `asyncio.to_thread()` to avoid blocking event loop | Task 4 (caller.py), Task 6 (main.py → async def) |
-| 6 | Token format changed from `[C_001]` to `[PII_C_001]` to avoid natural text collision | Task 2 (masker.py, rules.py) |
-| 7 | All SQL queries must include `AND AD_Org_ID = ANY(%(org_ids)s)` filter | Task 3 (sales.py) |
-| 8 | Add simple rate limiting: 20 req/user/min | Task 6 (main.py) |
-| 9 | Extract token usage from LLM response metadata (not hardcoded 0) | Task 4 (caller.py) |
-| 10 | Add `org_ids: list[int]` to AskRequest schema | Task 5 (schemas.py) |
-
-### WARNING fixes (apply where noted):
-
-| # | Fix | Affects Task |
-|---|-----|-------------|
-| 11 | Use psycopg2.pool.SimpleConnectionPool instead of connect/close per query | Task 3 (executor.py) |
-| 12 | Add conftest.py with shared fixtures | Task 6 |
-
-These changes are reflected in the updated spec: `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 2).
+**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 2)
 
 ---
 
 ## Project Structure
 
 ```
-idempiere-ai-assistant/            # Monorepo: one git repo, two sub-projects
+idempiere-ai-assistant/            # Monorepo
 ├── plugin/                        # Java iDempiere Plugin (Plan B — later)
-│   ├── pom.xml                    # Points to /home/tom/idempiere/org.idempiere.parent
-│   ├── META-INF/
-│   ├── OSGI-INF/
-│   └── src/
 ├── service/                       # Python AI Service (this plan)
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py                # FastAPI app + /ask endpoint + /health
-│   │   ├── config.py              # Settings from env vars (DB, API keys, port)
+│   │   ├── main.py                # FastAPI + HMAC auth + rate limit + /ask + /health
+│   │   ├── config.py              # Settings from env vars
 │   │   ├── router.py              # Classify → tool select → query → mask → LLM → unmask
 │   │   ├── queries/
 │   │   │   ├── __init__.py
-│   │   │   ├── registry.py        # QUERY_REGISTRY dict + lookup function
-│   │   │   ├── executor.py        # Connect read-only PG, execute query, return rows
+│   │   │   ├── registry.py        # QUERY_REGISTRY dict + lookup
+│   │   │   ├── executor.py        # PostgreSQL read-only + connection pool
 │   │   │   └── definitions/
 │   │   │       ├── __init__.py
-│   │   │       └── sales.py       # Sales/revenue/order queries (MVP: 3 queries)
+│   │   │       └── sales.py       # Sales queries (all with org_ids filter)
 │   │   ├── masking/
 │   │   │   ├── __init__.py
-│   │   │   ├── masker.py          # PIIMasker class: mask() and unmask()
-│   │   │   └── rules.py           # PII column patterns + token prefixes
+│   │   │   ├── masker.py          # PIIMasker with [PII_*] tokens
+│   │   │   └── rules.py           # PII column rules
 │   │   └── llm/
 │   │       ├── __init__.py
-│   │       ├── caller.py          # Call LLM with fallback chain
-│   │       └── prompts.py         # System prompts for router, tool selector, answerer
+│   │       ├── caller.py          # LLM call + fallback + token usage extraction
+│   │       └── prompts.py         # System prompts (with [PII_*] format)
 │   ├── tests/
 │   │   ├── __init__.py
-│   │   ├── conftest.py            # Shared fixtures (mock DB, mock LLM)
-│   │   ├── test_masking.py        # Mask/unmask round-trip tests
-│   │   ├── test_registry.py       # Query lookup tests
-│   │   ├── test_executor.py       # SQL execution tests (mock DB)
-│   │   ├── test_router.py         # Classification tests (mock LLM)
-│   │   ├── test_caller.py         # LLM call + fallback tests
-│   │   └── test_integration.py    # Full /ask endpoint test (mock DB + mock LLM)
+│   │   ├── conftest.py            # Shared fixtures
+│   │   ├── test_masking.py
+│   │   ├── test_registry.py
+│   │   ├── test_executor.py
+│   │   ├── test_caller.py
+│   │   ├── test_router.py
+│   │   └── test_integration.py
 │   ├── .env.example
 │   ├── requirements.txt
 │   └── CLAUDE.md
 ├── scripts/
-│   └── create_readonly_user.sql   # PostgreSQL read-only user setup
+│   └── create_readonly_user.sql
 ├── .gitignore
-├── CLAUDE.md                      # Root-level project overview
+├── CLAUDE.md
 └── AGENTS.md
 ```
 
@@ -94,21 +62,21 @@ idempiere-ai-assistant/            # Monorepo: one git repo, two sub-projects
 ### Task 1: Project Scaffold + Config
 
 **Files:**
-- Create: `idempiere-ai-service/requirements.txt`
-- Create: `idempiere-ai-service/.env.example`
-- Create: `idempiere-ai-service/.gitignore`
-- Create: `idempiere-ai-service/app/__init__.py`
-- Create: `idempiere-ai-service/app/config.py`
-- Create: `idempiere-ai-service/tests/__init__.py`
+- Create: `service/requirements.txt`
+- Create: `service/.env.example`
+- Create: `service/app/__init__.py`
+- Create: `service/app/config.py`
+- Create: `service/tests/__init__.py`
+- Create: `.gitignore`
 
-- [ ] **Step 1: Create project directory and requirements.txt**
+- [ ] **Step 1: Create directories and requirements.txt**
 
 ```bash
-mkdir -p /home/tom/idempiere-ai-assistant/{service/{app,tests},plugin,scripts}
+mkdir -p /home/tom/idempiere-ai-assistant/service/{app/{queries/definitions,masking,llm,models},tests}
 ```
 
 ```
-# requirements.txt
+# service/requirements.txt
 fastapi>=0.115
 uvicorn>=0.34
 langgraph>=0.4
@@ -124,6 +92,7 @@ httpx>=0.27
 - [ ] **Step 2: Create .env.example**
 
 ```
+# service/.env.example
 ANTHROPIC_API_KEY=sk-ant-xxxx
 GROQ_API_KEY=gsk_xxxx
 DB_HOST=localhost
@@ -131,10 +100,11 @@ DB_PORT=5432
 DB_NAME=idempiere
 DB_USER=ai_readonly
 DB_PASSWORD=xxxx
+HMAC_SECRET=change-me-to-a-random-string
 SERVICE_PORT=8900
 ```
 
-- [ ] **Step 3: Create .gitignore**
+- [ ] **Step 3: Create .gitignore (project root)**
 
 ```
 .env
@@ -147,6 +117,7 @@ __pycache__/
 - [ ] **Step 4: Create app/config.py**
 
 ```python
+# service/app/config.py
 import os
 from dotenv import load_dotenv
 
@@ -154,6 +125,7 @@ load_dotenv()
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+HMAC_SECRET = os.environ["HMAC_SECRET"]
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
@@ -174,7 +146,7 @@ touch /home/tom/idempiere-ai-assistant/service/tests/__init__.py
 - [ ] **Step 6: Install dependencies and verify**
 
 ```bash
-cd /home/tom/idempiere-ai-service
+cd /home/tom/idempiere-ai-assistant/service
 pip install -r requirements.txt
 python -c "import fastapi, langgraph, psycopg2; print('OK')"
 ```
@@ -182,9 +154,9 @@ python -c "import fastapi, langgraph, psycopg2; print('OK')"
 - [ ] **Step 7: Commit**
 
 ```bash
-git init
+cd /home/tom/idempiere-ai-assistant
 git add -A
-git commit -m "feat: project scaffold with config and dependencies"
+git commit -m "feat: project scaffold with config, HMAC secret, and dependencies"
 ```
 
 ---
@@ -192,15 +164,15 @@ git commit -m "feat: project scaffold with config and dependencies"
 ### Task 2: PII Masking Layer
 
 **Files:**
-- Create: `app/masking/__init__.py`
-- Create: `app/masking/rules.py`
-- Create: `app/masking/masker.py`
-- Create: `tests/test_masking.py`
+- Create: `service/app/masking/__init__.py`
+- Create: `service/app/masking/rules.py`
+- Create: `service/app/masking/masker.py`
+- Create: `service/tests/test_masking.py`
 
 - [ ] **Step 1: Write masking tests**
 
 ```python
-# tests/test_masking.py
+# service/tests/test_masking.py
 from app.masking.masker import PIIMasker
 from app.masking.rules import PII_COLUMN_RULES
 
@@ -209,19 +181,19 @@ def test_mask_single_value():
     masker = PIIMasker()
     rows = [{"name": "王大明", "revenue": 50000}]
     masked, mapping = masker.mask(rows, pii_columns=["name"])
-    assert masked[0]["name"] == "[C_001]"
+    assert masked[0]["name"] == "[PII_C_001]"
     assert masked[0]["revenue"] == 50000
-    assert mapping["[C_001]"] == "王大明"
+    assert mapping["[PII_C_001]"] == "王大明"
 
 
 def test_mask_multiple_pii_columns():
     masker = PIIMasker()
     rows = [{"name": "王大明", "taxid": "A123456789", "revenue": 50000}]
     masked, mapping = masker.mask(rows, pii_columns=["name", "taxid"])
-    assert masked[0]["name"] == "[C_001]"
-    assert masked[0]["taxid"] == "[T_001]"
-    assert mapping["[C_001]"] == "王大明"
-    assert mapping["[T_001]"] == "A123456789"
+    assert masked[0]["name"] == "[PII_C_001]"
+    assert masked[0]["taxid"] == "[PII_T_001]"
+    assert mapping["[PII_C_001]"] == "王大明"
+    assert mapping["[PII_T_001]"] == "A123456789"
 
 
 def test_mask_duplicate_values_same_token():
@@ -231,7 +203,7 @@ def test_mask_duplicate_values_same_token():
         {"name": "王大明", "revenue": 200},
     ]
     masked, mapping = masker.mask(rows, pii_columns=["name"])
-    assert masked[0]["name"] == masked[1]["name"] == "[C_001]"
+    assert masked[0]["name"] == masked[1]["name"] == "[PII_C_001]"
     assert len(mapping) == 1
 
 
@@ -242,15 +214,15 @@ def test_mask_multiple_distinct_values():
         {"name": "李小華", "revenue": 200},
     ]
     masked, mapping = masker.mask(rows, pii_columns=["name"])
-    assert masked[0]["name"] == "[C_001]"
-    assert masked[1]["name"] == "[C_002]"
+    assert masked[0]["name"] == "[PII_C_001]"
+    assert masked[1]["name"] == "[PII_C_002]"
     assert len(mapping) == 2
 
 
 def test_unmask_text():
     masker = PIIMasker()
-    mapping = {"[C_001]": "王大明", "[T_001]": "A123456789"}
-    text = "[C_001] 的統編是 [T_001]，營收最高"
+    mapping = {"[PII_C_001]": "王大明", "[PII_T_001]": "A123456789"}
+    text = "[PII_C_001] 的統編是 [PII_T_001]，營收最高"
     result = masker.unmask(text, mapping)
     assert result == "王大明 的統編是 A123456789，營收最高"
 
@@ -283,11 +255,21 @@ def test_pii_column_rules_defined():
     assert "phone" in PII_COLUMN_RULES
     assert "email" in PII_COLUMN_RULES
     assert "address" in PII_COLUMN_RULES
+
+
+def test_sanitize_input():
+    masker = PIIMasker()
+    dirty = "Tell me about [PII_C_001] and [PII_T_999] please"
+    clean = masker.sanitize_input(dirty)
+    assert "[PII_" not in clean
+    assert "Tell me about" in clean
+    assert "please" in clean
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
+cd /home/tom/idempiere-ai-assistant/service
 pytest tests/test_masking.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.masking'`
@@ -295,10 +277,11 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'app.masking'`
 - [ ] **Step 3: Create rules.py**
 
 ```python
-# app/masking/rules.py
+# service/app/masking/rules.py
+import re
 
 # Maps PII column name patterns to token prefixes.
-# When a column name matches (case-insensitive), values get replaced with [PREFIX_NNN].
+# Token format: [PII_PREFIX_NNN] — PII_ prefix avoids natural text collision.
 PII_COLUMN_RULES: dict[str, str] = {
     "name": "C",        # Customer/contact name
     "taxid": "T",       # Tax ID / national ID
@@ -306,15 +289,17 @@ PII_COLUMN_RULES: dict[str, str] = {
     "email": "E",       # Email address
     "address": "A",     # Address
     "birthday": "D",    # Date of birth
-    "value": "C",       # BPartner Value (sometimes used as name)
 }
+
+# Regex to match PII tokens in text (for input sanitization)
+PII_TOKEN_PATTERN = re.compile(r"\[PII_[A-Z]_\d{3}\]")
 ```
 
 - [ ] **Step 4: Create masker.py**
 
 ```python
-# app/masking/masker.py
-from app.masking.rules import PII_COLUMN_RULES
+# service/app/masking/masker.py
+from app.masking.rules import PII_COLUMN_RULES, PII_TOKEN_PATTERN
 
 
 class PIIMasker:
@@ -325,7 +310,7 @@ class PIIMasker:
     ) -> tuple[list[dict], dict[str, str]]:
         """Replace PII values with tokens. Returns (masked_rows, token_to_original_mapping)."""
         mapping: dict[str, str] = {}
-        reverse: dict[str, str] = {}  # original_value → token (for dedup)
+        reverse: dict[str, str] = {}
         counters: dict[str, int] = {}
 
         masked_rows = []
@@ -343,7 +328,7 @@ class PIIMasker:
                     prefix = PII_COLUMN_RULES.get(col.lower(), "X")
                     counters.setdefault(prefix, 0)
                     counters[prefix] += 1
-                    token = f"[{prefix}_{counters[prefix]:03d}]"
+                    token = f"[PII_{prefix}_{counters[prefix]:03d}]"
                     mapping[token] = str_val
                     reverse[str_val] = token
                     masked_row[col] = token
@@ -357,6 +342,10 @@ class PIIMasker:
         for token, original in mapping.items():
             result = result.replace(token, original)
         return result
+
+    def sanitize_input(self, text: str) -> str:
+        """Strip PII token patterns from user input to prevent prompt injection."""
+        return PII_TOKEN_PATTERN.sub("", text).strip()
 ```
 
 - [ ] **Step 5: Create __init__.py**
@@ -370,13 +359,14 @@ touch /home/tom/idempiere-ai-assistant/service/app/masking/__init__.py
 ```bash
 pytest tests/test_masking.py -v
 ```
-Expected: 9 passed
+Expected: 10 passed
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/masking/ tests/test_masking.py
-git commit -m "feat: PII masking layer with reversible token replacement"
+cd /home/tom/idempiere-ai-assistant
+git add service/app/masking/ service/tests/test_masking.py
+git commit -m "feat: PII masking layer with [PII_*] tokens and input sanitization"
 ```
 
 ---
@@ -384,18 +374,18 @@ git commit -m "feat: PII masking layer with reversible token replacement"
 ### Task 3: Query Registry + Executor
 
 **Files:**
-- Create: `app/queries/__init__.py`
-- Create: `app/queries/registry.py`
-- Create: `app/queries/definitions/__init__.py`
-- Create: `app/queries/definitions/sales.py`
-- Create: `app/queries/executor.py`
-- Create: `tests/test_registry.py`
-- Create: `tests/test_executor.py`
+- Create: `service/app/queries/__init__.py`
+- Create: `service/app/queries/registry.py`
+- Create: `service/app/queries/definitions/__init__.py`
+- Create: `service/app/queries/definitions/sales.py`
+- Create: `service/app/queries/executor.py`
+- Create: `service/tests/test_registry.py`
+- Create: `service/tests/test_executor.py`
 
 - [ ] **Step 1: Write registry tests**
 
 ```python
-# tests/test_registry.py
+# service/tests/test_registry.py
 from app.queries.registry import get_query, list_queries
 
 
@@ -425,10 +415,17 @@ def test_get_query_nonexistent():
 
 
 def test_query_descriptions_for_llm():
-    """Descriptions should be clear enough for an LLM to select the right query."""
     queries = list_queries()
     for name, q in queries.items():
-        assert len(q["description"]) >= 10, f"{name} description too short for LLM"
+        assert len(q["description"]) >= 10, f"{name} description too short"
+
+
+def test_all_queries_have_org_ids():
+    """All queries must filter by AD_Org_ID for security."""
+    queries = list_queries()
+    for name, q in queries.items():
+        assert "org_ids" in q["params"], f"{name} missing org_ids param"
+        assert "AD_Org_ID" in q["sql"], f"{name} missing AD_Org_ID filter in SQL"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -438,10 +435,10 @@ pytest tests/test_registry.py -v
 ```
 Expected: FAIL
 
-- [ ] **Step 3: Create sales.py query definitions**
+- [ ] **Step 3: Create sales.py query definitions (all with org_ids filter)**
 
 ```python
-# app/queries/definitions/sales.py
+# service/app/queries/definitions/sales.py
 
 SALES_QUERIES = {
     "top_customers_by_revenue": {
@@ -455,11 +452,12 @@ SALES_QUERIES = {
             WHERE o.DateOrdered BETWEEN %(date_from)s AND %(date_to)s
               AND o.DocStatus IN ('CO','CL')
               AND o.AD_Client_ID = %(ad_client_id)s
+              AND o.AD_Org_ID = ANY(%(org_ids)s)
             GROUP BY bp.Name, bp.TaxID
             ORDER BY Revenue DESC
             LIMIT %(limit)s
         """,
-        "params": ["date_from", "date_to", "ad_client_id", "limit"],
+        "params": ["date_from", "date_to", "ad_client_id", "org_ids", "limit"],
         "pii_columns": ["name", "taxid"],
     },
     "order_status_by_documentno": {
@@ -471,8 +469,9 @@ SALES_QUERIES = {
             JOIN C_BPartner bp ON bp.C_BPartner_ID = o.C_BPartner_ID
             WHERE o.DocumentNo = %(document_no)s
               AND o.AD_Client_ID = %(ad_client_id)s
+              AND o.AD_Org_ID = ANY(%(org_ids)s)
         """,
-        "params": ["document_no", "ad_client_id"],
+        "params": ["document_no", "ad_client_id", "org_ids"],
         "pii_columns": ["name"],
     },
     "monthly_revenue_summary": {
@@ -485,10 +484,11 @@ SALES_QUERIES = {
             WHERE EXTRACT(YEAR FROM o.DateOrdered) = %(year)s
               AND o.DocStatus IN ('CO','CL')
               AND o.AD_Client_ID = %(ad_client_id)s
+              AND o.AD_Org_ID = ANY(%(org_ids)s)
             GROUP BY TO_CHAR(o.DateOrdered, 'YYYY-MM')
             ORDER BY Month
         """,
-        "params": ["year", "ad_client_id"],
+        "params": ["year", "ad_client_id", "org_ids"],
         "pii_columns": [],
     },
 }
@@ -497,27 +497,23 @@ SALES_QUERIES = {
 - [ ] **Step 4: Create registry.py**
 
 ```python
-# app/queries/registry.py
+# service/app/queries/registry.py
 from app.queries.definitions.sales import SALES_QUERIES
 
-# Merge all query definitions into one registry
 QUERY_REGISTRY: dict[str, dict] = {
     **SALES_QUERIES,
 }
 
 
 def get_query(name: str) -> dict | None:
-    """Get a query definition by name. Returns None if not found."""
     return QUERY_REGISTRY.get(name)
 
 
 def list_queries() -> dict[str, dict]:
-    """Return all registered queries."""
     return QUERY_REGISTRY
 
 
 def get_query_descriptions() -> str:
-    """Format all query descriptions for LLM tool selection prompt."""
     lines = []
     for name, q in QUERY_REGISTRY.items():
         params = ", ".join(q["params"])
@@ -537,12 +533,12 @@ touch /home/tom/idempiere-ai-assistant/service/app/queries/definitions/__init__.
 ```bash
 pytest tests/test_registry.py -v
 ```
-Expected: 5 passed
+Expected: 6 passed
 
 - [ ] **Step 7: Write executor tests**
 
 ```python
-# tests/test_executor.py
+# service/tests/test_executor.py
 import pytest
 from unittest.mock import patch, MagicMock
 from app.queries.executor import QueryExecutor
@@ -550,75 +546,81 @@ from app.queries.executor import QueryExecutor
 
 @pytest.fixture
 def executor():
-    with patch("app.queries.executor.psycopg2") as mock_pg:
+    with patch("app.queries.executor.pool") as mock_pool:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value.__enter__ = lambda s: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_pg.connect.return_value = mock_conn
+        mock_pool.getconn.return_value = mock_conn
 
         mock_cursor.description = [("name",), ("revenue",)]
         mock_cursor.fetchall.return_value = [("王大明", 50000)]
 
         ex = QueryExecutor()
-        yield ex, mock_cursor
+        yield ex, mock_cursor, mock_pool, mock_conn
 
 
 def test_execute_returns_dicts(executor):
-    ex, mock_cursor = executor
+    ex, mock_cursor, _, _ = executor
     rows = ex.execute(
         "top_customers_by_revenue",
-        {"date_from": "2026-01-01", "date_to": "2026-03-31", "ad_client_id": 11, "limit": 5},
+        {"date_from": "2026-01-01", "date_to": "2026-03-31",
+         "ad_client_id": 11, "org_ids": [1, 2], "limit": 5},
     )
     assert rows == [{"name": "王大明", "revenue": 50000}]
 
 
+def test_execute_returns_conn_to_pool(executor):
+    ex, _, mock_pool, mock_conn = executor
+    ex.execute(
+        "top_customers_by_revenue",
+        {"date_from": "2026-01-01", "date_to": "2026-03-31",
+         "ad_client_id": 11, "org_ids": [1], "limit": 5},
+    )
+    mock_pool.putconn.assert_called_once_with(mock_conn)
+
+
 def test_execute_unknown_query(executor):
-    ex, _ = executor
+    ex, _, _, _ = executor
     with pytest.raises(ValueError, match="Unknown query"):
         ex.execute("nonexistent_query", {})
 
 
 def test_execute_missing_param(executor):
-    ex, _ = executor
+    ex, _, _, _ = executor
     with pytest.raises(ValueError, match="Missing parameter"):
         ex.execute("top_customers_by_revenue", {"date_from": "2026-01-01"})
 ```
 
-- [ ] **Step 8: Create executor.py**
+- [ ] **Step 8: Create executor.py (with connection pool)**
 
 ```python
-# app/queries/executor.py
+# service/app/queries/executor.py
 import psycopg2
+import psycopg2.pool
 from app.config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 from app.queries.registry import get_query
+
+pool = psycopg2.pool.SimpleConnectionPool(
+    minconn=1, maxconn=5,
+    host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+    user=DB_USER, password=DB_PASSWORD,
+)
 
 
 class QueryExecutor:
     """Execute pre-defined SQL queries against read-only PostgreSQL."""
 
-    def _connect(self):
-        return psycopg2.connect(
-            host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-            user=DB_USER, password=DB_PASSWORD,
-        )
-
     def execute(self, query_name: str, params: dict) -> list[dict]:
-        """Execute a pre-defined query by name with given parameters.
-
-        Returns list of dicts (column_name → value).
-        Raises ValueError if query not found or params missing.
-        """
         query_def = get_query(query_name)
         if query_def is None:
             raise ValueError(f"Unknown query: {query_name}")
 
-        # Validate all required params are present
         for p in query_def["params"]:
             if p not in params:
                 raise ValueError(f"Missing parameter: {p}")
 
-        conn = self._connect()
+        conn = pool.getconn()
         try:
             with conn.cursor() as cur:
                 cur.execute(query_def["sql"], params)
@@ -626,7 +628,7 @@ class QueryExecutor:
                 rows = cur.fetchall()
                 return [dict(zip(columns, row)) for row in rows]
         finally:
-            conn.close()
+            pool.putconn(conn)
 ```
 
 - [ ] **Step 9: Run executor tests**
@@ -634,29 +636,30 @@ class QueryExecutor:
 ```bash
 pytest tests/test_executor.py -v
 ```
-Expected: 3 passed
+Expected: 4 passed
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add app/queries/ tests/test_registry.py tests/test_executor.py
-git commit -m "feat: pre-defined query registry and read-only executor"
+cd /home/tom/idempiere-ai-assistant
+git add service/app/queries/ service/tests/test_registry.py service/tests/test_executor.py
+git commit -m "feat: query registry with org_ids filter and connection-pooled executor"
 ```
 
 ---
 
-### Task 4: LLM Caller with Fallback
+### Task 4: LLM Caller with Fallback + Token Usage
 
 **Files:**
-- Create: `app/llm/__init__.py`
-- Create: `app/llm/prompts.py`
-- Create: `app/llm/caller.py`
-- Create: `tests/test_caller.py`
+- Create: `service/app/llm/__init__.py`
+- Create: `service/app/llm/prompts.py`
+- Create: `service/app/llm/caller.py`
+- Create: `service/tests/test_caller.py`
 
 - [ ] **Step 1: Write caller tests**
 
 ```python
-# tests/test_caller.py
+# service/tests/test_caller.py
 import pytest
 from unittest.mock import patch, MagicMock
 from app.llm.caller import LLMCaller
@@ -675,27 +678,35 @@ def mock_models():
         yield caller, mock_sonnet, mock_llama70b, mock_llama8b
 
 
-def test_call_sonnet(mock_models):
+def _make_response(content, input_tokens=100, output_tokens=50):
+    resp = MagicMock()
+    resp.content = content
+    resp.usage_metadata = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+    return resp
+
+
+def test_call_returns_content_and_tokens(mock_models):
     caller, mock_sonnet, _, _ = mock_models
-    mock_sonnet.invoke.return_value = MagicMock(content="Sonnet answer")
-    result = caller.call("sonnet", "system prompt", "user question")
-    assert result == "Sonnet answer"
-    mock_sonnet.invoke.assert_called_once()
+    mock_sonnet.invoke.return_value = _make_response("Sonnet answer", 100, 50)
+    content, tokens = caller.call("sonnet", "system", "question")
+    assert content == "Sonnet answer"
+    assert tokens == 150
 
 
 def test_call_llama_70b(mock_models):
     caller, _, mock_llama70b, _ = mock_models
-    mock_llama70b.invoke.return_value = MagicMock(content="Llama answer")
-    result = caller.call("llama_70b", "system prompt", "user question")
-    assert result == "Llama answer"
+    mock_llama70b.invoke.return_value = _make_response("Llama answer", 80, 40)
+    content, tokens = caller.call("llama_70b", "system", "question")
+    assert content == "Llama answer"
+    assert tokens == 120
 
 
 def test_fallback_sonnet_to_llama(mock_models):
     caller, mock_sonnet, mock_llama70b, _ = mock_models
     mock_sonnet.invoke.side_effect = Exception("API down")
-    mock_llama70b.invoke.return_value = MagicMock(content="Fallback answer")
-    result = caller.call("sonnet", "system prompt", "user question")
-    assert result == "Fallback answer"
+    mock_llama70b.invoke.return_value = _make_response("Fallback answer")
+    content, tokens = caller.call("sonnet", "system", "question")
+    assert content == "Fallback answer"
 
 
 def test_both_fail_raises(mock_models):
@@ -703,7 +714,7 @@ def test_both_fail_raises(mock_models):
     mock_sonnet.invoke.side_effect = Exception("API down")
     mock_llama70b.invoke.side_effect = Exception("Also down")
     with pytest.raises(RuntimeError, match="All models failed"):
-        caller.call("sonnet", "system prompt", "user question")
+        caller.call("sonnet", "system", "question")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -713,10 +724,10 @@ pytest tests/test_caller.py -v
 ```
 Expected: FAIL
 
-- [ ] **Step 3: Create prompts.py**
+- [ ] **Step 3: Create prompts.py (with [PII_*] format)**
 
 ```python
-# app/llm/prompts.py
+# service/app/llm/prompts.py
 
 ROUTER_PROMPT = """You are a query classifier for an ERP system. Classify the user's question into exactly one category.
 
@@ -739,7 +750,7 @@ Rules:
 - Extract parameter values from the question context
 - For date_from/date_to: infer from "上個月", "今年", etc. Use ISO format YYYY-MM-DD
 - For limit: default to 10 if not specified
-- ad_client_id is provided in context, always use it
+- ad_client_id and org_ids are provided in context, always use them
 - If no query matches, set query_name to "none"
 
 Respond with ONLY valid JSON:
@@ -754,17 +765,17 @@ Rules:
 - Format numbers with commas for readability
 - If the data is empty, say so clearly
 - Do not make up data that isn't in the results
-- Reference entities by their identifiers as shown in the data (these may be masked tokens like [C_001])"""
+- Reference entities by their identifiers as shown in the data (these may be masked tokens like [PII_C_001])"""
 
 
 CLARIFICATION_PROMPT = """The user's question is too vague to answer. Ask them to be more specific.
 Reply in the same language as the user's question. Be brief and friendly."""
 ```
 
-- [ ] **Step 4: Create caller.py**
+- [ ] **Step 4: Create caller.py (with token usage extraction)**
 
 ```python
-# app/llm/caller.py
+# service/app/llm/caller.py
 from langchain_anthropic import ChatAnthropic
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -778,7 +789,7 @@ FALLBACK_CHAIN = {
 
 
 class LLMCaller:
-    """Call LLMs with automatic fallback."""
+    """Call LLMs with automatic fallback. Returns (content, total_tokens)."""
 
     def __init__(self):
         self.models = {
@@ -796,30 +807,35 @@ class LLMCaller:
             ),
         }
 
-    def call(self, model_name: str, system_prompt: str, user_message: str) -> str:
-        """Call a model with automatic fallback. Raises RuntimeError if all fail."""
+    def call(self, model_name: str, system_prompt: str, user_message: str) -> tuple[str, int]:
+        """Call a model with fallback. Returns (content, total_tokens)."""
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
         ]
 
-        # Try primary
         try:
             response = self.models[model_name].invoke(messages)
-            return response.content
+            return response.content, self._extract_tokens(response)
         except Exception as primary_err:
-            # Try fallback
             fallback = FALLBACK_CHAIN.get(model_name)
             if fallback is None:
                 raise RuntimeError(f"All models failed: {primary_err}")
             try:
                 response = self.models[fallback].invoke(messages)
-                return response.content
+                return response.content, self._extract_tokens(response)
             except Exception as fallback_err:
                 raise RuntimeError(
                     f"All models failed: primary({model_name})={primary_err}, "
                     f"fallback({fallback})={fallback_err}"
                 )
+
+    def _extract_tokens(self, response) -> int:
+        """Extract total token usage from LLM response metadata."""
+        meta = getattr(response, "usage_metadata", None)
+        if meta and isinstance(meta, dict):
+            return meta.get("input_tokens", 0) + meta.get("output_tokens", 0)
+        return 0
 ```
 
 - [ ] **Step 5: Create __init__.py**
@@ -838,24 +854,25 @@ Expected: 4 passed
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/llm/ tests/test_caller.py
-git commit -m "feat: LLM caller with fallback chain and prompt templates"
+cd /home/tom/idempiere-ai-assistant
+git add service/app/llm/ service/tests/test_caller.py
+git commit -m "feat: LLM caller with fallback and token usage extraction"
 ```
 
 ---
 
-### Task 5: LangGraph Router
+### Task 5: Router Pipeline
 
 **Files:**
-- Create: `app/router.py`
-- Create: `tests/test_router.py`
-- Create: `app/models/__init__.py`
-- Create: `app/models/schemas.py`
+- Create: `service/app/router.py`
+- Create: `service/app/models/__init__.py`
+- Create: `service/app/models/schemas.py`
+- Create: `service/tests/test_router.py`
 
-- [ ] **Step 1: Create pydantic schemas**
+- [ ] **Step 1: Create pydantic schemas (with org_ids)**
 
 ```python
-# app/models/schemas.py
+# service/app/models/schemas.py
 from pydantic import BaseModel
 
 
@@ -864,6 +881,7 @@ class AskRequest(BaseModel):
     user_id: int
     role_id: int
     client_id: int
+    org_ids: list[int]
     session_id: str
     history: list[dict] = []
 
@@ -880,10 +898,10 @@ class AskResponse(BaseModel):
 touch /home/tom/idempiere-ai-assistant/service/app/models/__init__.py
 ```
 
-- [ ] **Step 2: Write router tests**
+- [ ] **Step 2: Write router tests (with sanitization and [PII_*] tokens)**
 
 ```python
-# tests/test_router.py
+# service/tests/test_router.py
 import pytest
 from unittest.mock import patch, MagicMock
 from app.router import process_question
@@ -894,51 +912,66 @@ def mock_deps():
     with patch("app.router.LLMCaller") as MockCaller, \
          patch("app.router.QueryExecutor") as MockExecutor:
         caller = MockCaller.return_value
+        caller.call.return_value = ("", 0)  # default
         executor = MockExecutor.return_value
         yield caller, executor
 
 
 def test_general_knowledge_no_db(mock_deps):
     caller, executor = mock_deps
-
-    # Router classifies as general_knowledge
     caller.call.side_effect = [
-        '{"category": "general_knowledge", "reason": "concept question"}',  # router
-        "Docker is a containerization platform.",  # answerer
+        ('{"category": "general_knowledge", "reason": "concept"}', 10),
+        ("Docker is a containerization platform.", 50),
     ]
 
-    result = process_question("What is Docker?", client_id=11)
+    result = process_question("What is Docker?", client_id=11, org_ids=[1])
     assert result["answer"] == "Docker is a containerization platform."
     assert result["query_used"] is None
+    assert result["tokens_used"] == 60
     executor.execute.assert_not_called()
 
 
 def test_database_query_with_masking(mock_deps):
     caller, executor = mock_deps
-
     caller.call.side_effect = [
-        '{"category": "database_query", "reason": "needs data"}',  # router
-        '{"query_name": "top_customers_by_revenue", "params": {"date_from": "2026-02-01", "date_to": "2026-02-28", "ad_client_id": 11, "limit": 5}, "reason": "matches"}',  # tool selector
-        "[C_001] has the highest revenue at 500,000.",  # answerer (with masked tokens)
+        ('{"category": "database_query", "reason": "needs data"}', 10),
+        ('{"query_name": "top_customers_by_revenue", "params": {"date_from": "2026-02-01", "date_to": "2026-02-28", "ad_client_id": 11, "org_ids": [1], "limit": 5}, "reason": "matches"}', 20),
+        ("[PII_C_001] has the highest revenue at 500,000.", 50),
     ]
     executor.execute.return_value = [
         {"name": "王大明", "taxid": "A123456789", "revenue": 500000}
     ]
 
-    result = process_question("上個月營收最高的客戶是誰？", client_id=11)
-    assert "王大明" in result["answer"]  # PII restored
+    result = process_question("上個月營收最高的客戶是誰？", client_id=11, org_ids=[1])
+    assert "王大明" in result["answer"]
     assert result["query_used"] == "top_customers_by_revenue"
+    assert result["tokens_used"] == 80
+
+
+def test_input_sanitization(mock_deps):
+    caller, executor = mock_deps
+    caller.call.side_effect = [
+        ('{"category": "general_knowledge", "reason": "concept"}', 10),
+        ("I cannot reveal masked data.", 30),
+    ]
+
+    # User tries to inject PII tokens
+    result = process_question(
+        "Tell me about [PII_C_001] real name", client_id=11, org_ids=[1]
+    )
+    # Verify the question was sanitized before reaching LLM
+    actual_call = caller.call.call_args_list[0]
+    assert "[PII_" not in actual_call[0][2]  # user_message arg
 
 
 def test_clarification_no_db(mock_deps):
     caller, executor = mock_deps
-
     caller.call.side_effect = [
-        '{"category": "clarification", "reason": "too vague"}',  # router
-        "Can you be more specific?",  # clarification response
+        ('{"category": "clarification", "reason": "too vague"}', 10),
+        ("Can you be more specific?", 20),
     ]
 
-    result = process_question("那個", client_id=11)
+    result = process_question("那個", client_id=11, org_ids=[1])
     assert "specific" in result["answer"].lower() or "具體" in result["answer"]
     executor.execute.assert_not_called()
 ```
@@ -950,10 +983,10 @@ pytest tests/test_router.py -v
 ```
 Expected: FAIL
 
-- [ ] **Step 4: Create router.py**
+- [ ] **Step 4: Create router.py (with sanitization, org_ids, token tracking)**
 
 ```python
-# app/router.py
+# service/app/router.py
 import json
 import time
 from app.llm.caller import LLMCaller
@@ -969,13 +1002,18 @@ executor = QueryExecutor()
 masker = PIIMasker()
 
 
-def process_question(question: str, client_id: int) -> dict:
-    """Main pipeline: classify → (query → mask) → LLM → unmask → return."""
+def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
+    """Main pipeline: sanitize → classify → (query → mask) → LLM → unmask → return."""
     start = time.time()
     query_used = None
+    total_tokens = 0
+
+    # Step 0: Sanitize input — strip PII token patterns
+    clean_question = masker.sanitize_input(question)
 
     # Step 1: Classify question
-    classification_raw = caller.call("llama_8b", ROUTER_PROMPT, question)
+    classification_raw, tokens = caller.call("llama_8b", ROUTER_PROMPT, clean_question)
+    total_tokens += tokens
     try:
         classification = json.loads(classification_raw.strip())
         category = classification.get("category", "general_knowledge")
@@ -984,16 +1022,18 @@ def process_question(question: str, client_id: int) -> dict:
 
     # Step 2: Handle by category
     if category == "clarification":
-        answer = caller.call("llama_8b", CLARIFICATION_PROMPT, question)
+        answer, tokens = caller.call("llama_8b", CLARIFICATION_PROMPT, clean_question)
+        total_tokens += tokens
         model_used = "llama_8b"
 
     elif category == "database_query":
-        # Step 2a: Select query + extract params
+        # Select query + extract params
         selector_prompt = TOOL_SELECTOR_PROMPT.format(
             query_descriptions=get_query_descriptions()
         )
-        context = f"Question: {question}\nad_client_id: {client_id}"
-        selection_raw = caller.call("sonnet", selector_prompt, context)
+        context = f"Question: {clean_question}\nad_client_id: {client_id}\norg_ids: {org_ids}"
+        selection_raw, tokens = caller.call("sonnet", selector_prompt, context)
+        total_tokens += tokens
 
         try:
             selection = json.loads(selection_raw.strip())
@@ -1004,29 +1044,31 @@ def process_question(question: str, client_id: int) -> dict:
             params = {}
 
         if query_name == "none" or get_query(query_name) is None:
-            # No matching query, answer as general knowledge
-            answer = caller.call("sonnet", ANSWERER_PROMPT, question)
+            answer, tokens = caller.call("sonnet", ANSWERER_PROMPT, clean_question)
+            total_tokens += tokens
             model_used = "sonnet"
         else:
-            # Step 2b: Execute query
+            # Execute query
             query_def = get_query(query_name)
             rows = executor.execute(query_name, params)
             query_used = query_name
 
-            # Step 2c: Mask PII
+            # Mask PII
             masked_rows, mapping = masker.mask(rows, query_def["pii_columns"])
 
-            # Step 2d: Call LLM with masked data
+            # Call LLM with masked data
             data_text = json.dumps(masked_rows, ensure_ascii=False, default=str)
-            prompt = f"Question: {question}\n\nQuery results:\n{data_text}"
-            masked_answer = caller.call("sonnet", ANSWERER_PROMPT, prompt)
+            prompt = f"Question: {clean_question}\n\nQuery results:\n{data_text}"
+            masked_answer, tokens = caller.call("sonnet", ANSWERER_PROMPT, prompt)
+            total_tokens += tokens
             model_used = "sonnet"
 
-            # Step 2e: Unmask PII in answer
+            # Unmask PII in answer
             answer = masker.unmask(masked_answer, mapping)
     else:
         # general_knowledge
-        answer = caller.call("sonnet", ANSWERER_PROMPT, question)
+        answer, tokens = caller.call("sonnet", ANSWERER_PROMPT, clean_question)
+        total_tokens += tokens
         model_used = "sonnet"
 
     elapsed_ms = int((time.time() - start) * 1000)
@@ -1034,7 +1076,7 @@ def process_question(question: str, client_id: int) -> dict:
     return {
         "answer": answer,
         "model_used": model_used,
-        "tokens_used": 0,  # TODO: extract from LLM response usage
+        "tokens_used": total_tokens,
         "query_used": query_used,
         "elapsed_ms": elapsed_ms,
     }
@@ -1045,87 +1087,107 @@ def process_question(question: str, client_id: int) -> dict:
 ```bash
 pytest tests/test_router.py -v
 ```
-Expected: 3 passed
+Expected: 4 passed
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/router.py app/models/ tests/test_router.py
-git commit -m "feat: LangGraph router with classify → query → mask → LLM → unmask pipeline"
+cd /home/tom/idempiere-ai-assistant
+git add service/app/router.py service/app/models/ service/tests/test_router.py
+git commit -m "feat: router pipeline with input sanitization, org_ids, and token tracking"
 ```
 
 ---
 
-### Task 6: FastAPI Endpoint + Integration Test
+### Task 6: FastAPI Endpoint + HMAC Auth + Rate Limit
 
 **Files:**
-- Create: `app/main.py`
-- Create: `tests/test_integration.py`
-- Create: `tests/conftest.py`
+- Create: `service/app/main.py`
+- Create: `service/tests/conftest.py`
+- Create: `service/tests/test_integration.py`
 
-- [ ] **Step 1: Write integration test**
+- [ ] **Step 1: Create conftest.py with shared fixtures**
 
 ```python
-# tests/test_integration.py
+# service/tests/conftest.py
+import os
+import pytest
+
+# Set test env vars before any app imports
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+os.environ.setdefault("GROQ_API_KEY", "test-key")
+os.environ.setdefault("HMAC_SECRET", "test-secret")
+os.environ.setdefault("DB_PASSWORD", "test-pass")
+```
+
+- [ ] **Step 2: Write integration tests (with HMAC)**
+
+```python
+# service/tests/test_integration.py
+import hmac
+import hashlib
+import json
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 
+def _sign(body: dict, secret: str = "test-secret") -> str:
+    body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
+    return hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+
+
 @patch("app.router.LLMCaller")
 @patch("app.router.QueryExecutor")
-def test_ask_endpoint_general(MockExecutor, MockCaller):
+@patch("app.queries.executor.pool")
+def test_ask_with_valid_hmac(mock_pool, MockExecutor, MockCaller):
     caller = MockCaller.return_value
     caller.call.side_effect = [
-        '{"category": "general_knowledge", "reason": "concept"}',
-        "Docker is a container platform.",
+        ('{"category": "general_knowledge", "reason": "concept"}', 10),
+        ("Docker is a container platform.", 50),
     ]
 
     from app.main import app
     client = TestClient(app)
 
-    response = client.post("/ask", json={
+    body = {
         "question": "What is Docker?",
-        "user_id": 100,
-        "role_id": 200,
-        "client_id": 11,
+        "user_id": 100, "role_id": 200,
+        "client_id": 11, "org_ids": [1],
         "session_id": "test-001",
-    })
-
+    }
+    response = client.post(
+        "/ask", json=body,
+        headers={"X-HMAC-Signature": _sign(body)},
+    )
     assert response.status_code == 200
-    data = response.json()
-    assert "Docker" in data["answer"]
-    assert data["query_used"] is None
+    assert "Docker" in response.json()["answer"]
 
 
-@patch("app.router.LLMCaller")
-@patch("app.router.QueryExecutor")
-def test_ask_endpoint_db_query(MockExecutor, MockCaller):
-    caller = MockCaller.return_value
-    executor = MockExecutor.return_value
-
-    caller.call.side_effect = [
-        '{"category": "database_query", "reason": "needs data"}',
-        '{"query_name": "monthly_revenue_summary", "params": {"year": 2026, "ad_client_id": 11}, "reason": "monthly trend"}',
-        "Revenue in January was 1,000,000.",
-    ]
-    executor.execute.return_value = [
-        {"month": "2026-01", "revenue": 1000000, "ordercount": 50}
-    ]
-
+@patch("app.queries.executor.pool")
+def test_ask_without_hmac_rejected(mock_pool):
     from app.main import app
     client = TestClient(app)
 
     response = client.post("/ask", json={
-        "question": "今年每月營收多少？",
-        "user_id": 100,
-        "role_id": 200,
-        "client_id": 11,
-        "session_id": "test-002",
+        "question": "Hello", "user_id": 100, "role_id": 200,
+        "client_id": 11, "org_ids": [1], "session_id": "test-002",
     })
+    assert response.status_code == 401
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["query_used"] == "monthly_revenue_summary"
+
+@patch("app.queries.executor.pool")
+def test_ask_with_wrong_hmac_rejected(mock_pool):
+    from app.main import app
+    client = TestClient(app)
+
+    response = client.post(
+        "/ask", json={
+            "question": "Hello", "user_id": 100, "role_id": 200,
+            "client_id": 11, "org_ids": [1], "session_id": "test-003",
+        },
+        headers={"X-HMAC-Signature": "wrong-signature"},
+    )
+    assert response.status_code == 401
 
 
 def test_health_endpoint():
@@ -1134,23 +1196,55 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+@patch("app.router.LLMCaller")
+@patch("app.router.QueryExecutor")
+@patch("app.queries.executor.pool")
+def test_error_returns_generic_message(mock_pool, MockExecutor, MockCaller):
+    caller = MockCaller.return_value
+    caller.call.side_effect = Exception("Secret PII data in error: 王大明")
+
+    from app.main import app
+    client = TestClient(app)
+
+    body = {
+        "question": "test", "user_id": 100, "role_id": 200,
+        "client_id": 11, "org_ids": [1], "session_id": "test-err",
+    }
+    response = client.post(
+        "/ask", json=body,
+        headers={"X-HMAC-Signature": _sign(body)},
+    )
+    assert response.status_code == 500
+    assert "王大明" not in response.json()["detail"]
+    assert "Request processing failed" in response.json()["detail"]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
 pytest tests/test_integration.py -v
 ```
 Expected: FAIL
 
-- [ ] **Step 3: Create main.py**
+- [ ] **Step 4: Create main.py (with HMAC auth, rate limit, generic errors, async)**
 
 ```python
-# app/main.py
+# service/app/main.py
+import hmac
+import hashlib
+import json
 import time
-from fastapi import FastAPI, HTTPException
+import asyncio
+import logging
+from collections import defaultdict, deque
+from fastapi import FastAPI, HTTPException, Request
 from app.models.schemas import AskRequest, AskResponse
 from app.router import process_question
+from app.config import HMAC_SECRET
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="iDempiere AI Service",
@@ -1158,18 +1252,58 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Rate limiter: max 20 requests per user per minute
+RATE_LIMIT = 20
+RATE_WINDOW = 60  # seconds
+_request_log: dict[int, deque] = defaultdict(deque)
+
+
+def _verify_hmac(body_bytes: bytes, signature: str) -> bool:
+    expected = hmac.new(HMAC_SECRET.encode(), body_bytes, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def _check_rate_limit(user_id: int) -> bool:
+    now = time.time()
+    log = _request_log[user_id]
+    while log and log[0] < now - RATE_WINDOW:
+        log.popleft()
+    if len(log) >= RATE_LIMIT:
+        return False
+    log.append(now)
+    return True
+
 
 @app.post("/ask", response_model=AskResponse)
-def ask(req: AskRequest):
+async def ask(request: Request):
     """Process a natural language question about ERP data."""
+    # Read raw body for HMAC verification
+    body_bytes = await request.body()
+
+    # Verify HMAC signature
+    signature = request.headers.get("X-HMAC-Signature", "")
+    if not signature or not _verify_hmac(body_bytes, signature):
+        raise HTTPException(status_code=401, detail="Invalid or missing HMAC signature")
+
+    # Parse request
+    req = AskRequest.model_validate_json(body_bytes)
+
+    # Rate limit
+    if not _check_rate_limit(req.user_id):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Max 20 requests per minute.")
+
+    # Process question in thread to avoid blocking event loop
     try:
-        result = process_question(
+        result = await asyncio.to_thread(
+            process_question,
             question=req.question,
             client_id=req.client_id,
+            org_ids=req.org_ids,
         )
         return AskResponse(**result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Request processing failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Request processing failed")
 
 
 @app.get("/health")
@@ -1183,145 +1317,146 @@ if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=SERVICE_PORT)
 ```
 
-- [ ] **Step 4: Run integration tests**
+- [ ] **Step 5: Run integration tests**
 
 ```bash
 pytest tests/test_integration.py -v
 ```
-Expected: 3 passed
+Expected: 5 passed
 
-- [ ] **Step 5: Run all tests**
+- [ ] **Step 6: Run all tests**
 
 ```bash
 pytest tests/ -v
 ```
-Expected: All passed (masking + registry + executor + caller + router + integration)
+Expected: All passed (~28 tests)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/main.py tests/test_integration.py
-git commit -m "feat: FastAPI /ask endpoint with full pipeline integration"
+cd /home/tom/idempiere-ai-assistant
+git add service/app/main.py service/tests/conftest.py service/tests/test_integration.py
+git commit -m "feat: FastAPI endpoint with HMAC auth, rate limiting, and generic error responses"
 ```
 
 ---
 
-### Task 7: PostgreSQL Read-Only User + Manual Test
+### Task 7: PostgreSQL Read-Only User + Service CLAUDE.md + Manual Test
 
 **Files:**
 - Create: `scripts/create_readonly_user.sql`
-- Create: `CLAUDE.md`
-- Create: `AGENTS.md`
+- Create: `service/CLAUDE.md`
 
 - [ ] **Step 1: Create read-only DB user script**
 
 ```sql
--- ../../scripts/create_readonly_user.sql (at monorepo root)
+-- scripts/create_readonly_user.sql
 -- Run as PostgreSQL superuser against iDempiere database
--- Creates a read-only user for the AI service
 
 CREATE USER ai_readonly WITH PASSWORD 'CHANGE_ME_IN_PRODUCTION';
 
--- Grant connect
 GRANT CONNECT ON DATABASE idempiere TO ai_readonly;
-
--- Grant usage on adempiere schema
 GRANT USAGE ON SCHEMA adempiere TO ai_readonly;
-
--- Grant SELECT on all existing tables
 GRANT SELECT ON ALL TABLES IN SCHEMA adempiere TO ai_readonly;
 
--- Grant SELECT on future tables
 ALTER DEFAULT PRIVILEGES IN SCHEMA adempiere
     GRANT SELECT ON TABLES TO ai_readonly;
-
--- Verify: should show only SELECT
--- \dp adempiere.c_order
 ```
 
-- [ ] **Step 2: Create CLAUDE.md**
+- [ ] **Step 2: Create service/CLAUDE.md**
 
 ```markdown
 # iDempiere AI Service
 
 ## What This Is
-FastAPI service that provides AI-powered Q&A for iDempiere ERP data.
-Called by iDempiere Plugin via HTTP POST to localhost:8900.
+FastAPI service providing AI-powered Q&A for iDempiere ERP data.
+Called by iDempiere Plugin via authenticated HTTP POST to localhost:8900.
 
 ## Iron Rules
 1. SQL is pre-defined in app/queries/definitions/ — NEVER generate dynamic SQL
-2. PII must be masked before sending to external LLMs
-3. PostgreSQL connection is read-only (ai_readonly user)
+2. PII must be masked ([PII_*] tokens) before sending to external LLMs
+3. PostgreSQL connection is read-only (ai_readonly user, connection pool)
 4. Service listens on localhost only, not exposed to network
-5. All code in English
+5. All requests authenticated via HMAC-SHA256
+6. Error responses NEVER include PII or stack traces
+7. All code in English
 
 ## Running
-```
-cp .env.example .env  # fill in keys
+```bash
+cp .env.example .env  # fill in keys + HMAC_SECRET
 pip install -r requirements.txt
 python -m app.main
 ```
 
 ## Testing
-```
+```bash
 pytest tests/ -v
 ```
 
 ## Adding New Queries
 1. Create or edit a file in app/queries/definitions/
-2. Add queries to the module-level dict (follow sales.py pattern)
-3. Import and merge in app/queries/registry.py
-4. Add tests in tests/test_registry.py
+2. All queries MUST include `AND AD_Org_ID = ANY(%(org_ids)s)` filter
+3. All queries MUST list PII columns in `pii_columns`
+4. Import and merge in app/queries/registry.py
+5. Add tests in tests/test_registry.py
 ```
 
-- [ ] **Step 3: Create .env with real values, run server, test with curl**
+- [ ] **Step 3: Create .env, start server, manual test**
 
 ```bash
-# Fill in .env with real credentials
+cd /home/tom/idempiere-ai-assistant/service
 cp .env.example .env
-# Edit .env: set DB_PASSWORD, API keys
+# Edit .env with real credentials
 
-# Start server
 python -m app.main &
 
 # Test health
 curl http://localhost:8900/health
 
-# Test ask endpoint (with real LLMs + real DB)
-curl -X POST http://localhost:8900/ask \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "今年每月營收多少？",
-    "user_id": 100,
-    "role_id": 200,
-    "client_id": 11,
-    "session_id": "manual-test"
-  }'
+# Test with HMAC (requires generating signature — use Python)
+python3 -c "
+import hmac, hashlib, json, os
+from dotenv import load_dotenv
+load_dotenv()
+
+body = {'question': '今年每月營收多少？', 'user_id': 100, 'role_id': 200,
+        'client_id': 11, 'org_ids': [1], 'session_id': 'manual-test'}
+body_str = json.dumps(body, separators=(',', ':'), sort_keys=True)
+sig = hmac.new(os.environ['HMAC_SECRET'].encode(), body_str.encode(), hashlib.sha256).hexdigest()
+print(f'Body: {body_str}')
+print(f'Signature: {sig}')
+"
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
 cd /home/tom/idempiere-ai-assistant
-git add scripts/ service/CLAUDE.md CLAUDE.md AGENTS.md
-git commit -m "docs: add CLAUDE.md, AGENTS.md, and DB setup script"
+git add scripts/ service/CLAUDE.md
+git commit -m "docs: service CLAUDE.md and DB setup script"
 ```
 
 ---
 
-## Spec Coverage Check
+## Spec Coverage Check (Rev 2)
 
-| Spec Requirement | Task |
-|-----------------|------|
-| FastAPI endpoint POST /ask | Task 6 |
-| LangGraph Router (classify) | Task 5 |
-| Pre-defined SQL only | Task 3 |
-| Read-only PostgreSQL | Task 3, 7 |
-| PII masking (reversible) | Task 2 |
-| PII unmasking | Task 2, 5 |
-| LLM call with fallback | Task 4 |
-| System prompts | Task 4 |
-| Pydantic schemas | Task 5 |
-| Health endpoint | Task 6 |
-| Read-only DB user | Task 7 |
-| CLAUDE.md / AGENTS.md | Task 7 |
+| Spec Requirement | Task | Fix # |
+|-----------------|------|-------|
+| HMAC-SHA256 auth | Task 6 | Fix #1 |
+| Generic error messages (no PII) | Task 6 | Fix #2 |
+| contextvars-style isolation (per-request masking) | Task 2, 5 | Fix #3 |
+| Input sanitization ([PII_*] stripping) | Task 2, 5 | Fix #4 |
+| asyncio.to_thread for LLM calls | Task 6 | Fix #5 |
+| [PII_*] token format | Task 2 | Fix #6 |
+| AD_Org_ID filter in all SQL | Task 3 | Fix #7 |
+| Rate limiting (20 req/user/min) | Task 6 | Fix #8 |
+| Token usage from metadata | Task 4 | Fix #9 |
+| org_ids in AskRequest | Task 5 | Fix #10 |
+| Connection pooling | Task 3 | Fix #11 |
+| conftest.py shared fixtures | Task 6 | Fix #12 |
+| Pre-defined SQL only | Task 3 | — |
+| Read-only PostgreSQL | Task 3, 7 | — |
+| PII masking (reversible) | Task 2, 5 | — |
+| LLM call with fallback | Task 4 | — |
+| System prompts | Task 4 | — |
+| Health endpoint | Task 6 | — |
