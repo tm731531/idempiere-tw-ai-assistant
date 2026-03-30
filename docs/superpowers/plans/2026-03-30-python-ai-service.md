@@ -162,7 +162,7 @@ os.environ.setdefault("DB_PASSWORD", "test-pass")
 ```bash
 cd /home/tom/idempiere-ai-assistant/service
 pip install -r requirements.txt
-python -c "import fastapi, langgraph, psycopg2; print('OK')"
+python -c "import fastapi, psycopg2; print('OK')"
 ```
 
 - [ ] **Step 7: Commit**
@@ -688,7 +688,7 @@ class QueryExecutor:
 ```bash
 pytest tests/test_executor.py -v
 ```
-Expected: 4 passed
+Expected: 5 passed
 
 - [ ] **Step 10: Commit**
 
@@ -1177,7 +1177,7 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
 ```bash
 pytest tests/test_router.py -v
 ```
-Expected: 4 passed
+Expected: 5 passed
 
 - [ ] **Step 6: Commit**
 
