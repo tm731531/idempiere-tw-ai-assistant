@@ -672,6 +672,9 @@ class QueryExecutor:
         if "org_ids" in params and isinstance(params["org_ids"], tuple):
             params = {**params, "org_ids": list(params["org_ids"])}
 
+        if pool is None:
+            raise RuntimeError("Database pool not initialized")
+
         conn = pool.getconn()
         try:
             with conn.cursor() as cur:
@@ -679,6 +682,10 @@ class QueryExecutor:
                 columns = [desc[0] for desc in cur.description]
                 rows = cur.fetchmany(MAX_ROWS)  # Safety net: never return unbounded results
                 return [dict(zip(columns, row)) for row in rows]
+        except Exception as db_error:
+            import logging
+            logging.getLogger(__name__).error("Query %s failed: %s", query_name, db_error)
+            raise ValueError("Database query failed") from None  # strip traceback, no PII
         finally:
             pool.putconn(conn)
 ```
@@ -1462,6 +1469,9 @@ ALTER USER ai_readonly SET search_path TO adempiere;
 
 -- Prevent runaway queries — 10 second hard limit per statement
 ALTER ROLE ai_readonly SET statement_timeout = '10s';
+
+-- Least privilege: prevent creating objects in the schema
+REVOKE CREATE ON SCHEMA adempiere FROM ai_readonly;
 ```
 
 - [ ] **Step 2: Create service/CLAUDE.md**
