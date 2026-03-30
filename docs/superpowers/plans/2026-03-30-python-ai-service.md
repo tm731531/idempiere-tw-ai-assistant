@@ -10,6 +10,36 @@
 
 ---
 
+## Review Fixes (Rev 2 — 2026-03-30)
+
+The following changes were identified during team review (Opus: iDempiere, Haiku: Python + Security) and MUST be applied during implementation:
+
+### CRITICAL fixes (apply to relevant tasks):
+
+| # | Fix | Affects Task |
+|---|-----|-------------|
+| 1 | Add HMAC-SHA256 auth to `/ask` endpoint (shared secret in .env) | Task 6 (main.py) |
+| 2 | Error responses must return generic message, NEVER include PII or traceback | Task 6 (main.py) |
+| 3 | PII mapping must use `contextvars.ContextVar` for thread-safe request isolation | Task 2 (masker.py), Task 5 (router.py) |
+| 4 | Add input sanitization: strip `[PII_*]` patterns from user question before LLM | Task 5 (router.py) |
+| 5 | Wrap all LLM `.invoke()` calls in `asyncio.to_thread()` to avoid blocking event loop | Task 4 (caller.py), Task 6 (main.py → async def) |
+| 6 | Token format changed from `[C_001]` to `[PII_C_001]` to avoid natural text collision | Task 2 (masker.py, rules.py) |
+| 7 | All SQL queries must include `AND AD_Org_ID = ANY(%(org_ids)s)` filter | Task 3 (sales.py) |
+| 8 | Add simple rate limiting: 20 req/user/min | Task 6 (main.py) |
+| 9 | Extract token usage from LLM response metadata (not hardcoded 0) | Task 4 (caller.py) |
+| 10 | Add `org_ids: list[int]` to AskRequest schema | Task 5 (schemas.py) |
+
+### WARNING fixes (apply where noted):
+
+| # | Fix | Affects Task |
+|---|-----|-------------|
+| 11 | Use psycopg2.pool.SimpleConnectionPool instead of connect/close per query | Task 3 (executor.py) |
+| 12 | Add conftest.py with shared fixtures | Task 6 |
+
+These changes are reflected in the updated spec: `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 2).
+
+---
+
 ## Project Structure
 
 ```
