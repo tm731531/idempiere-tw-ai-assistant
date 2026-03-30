@@ -121,10 +121,13 @@ Import-Package: com.google.gson,
  javax.crypto,
  javax.crypto.spec,
  org.adempiere.base,
+ org.adempiere.exceptions,
  org.adempiere.pipo2,
+ org.adempiere.plugin.utils,
  org.adempiere.webui,
  org.adempiere.webui.adwindow,
  org.adempiere.webui.component,
+ org.adempiere.webui.factory,
  org.adempiere.webui.panel,
  org.adempiere.webui.session,
  org.adempiere.webui.util,
@@ -254,7 +257,34 @@ ls /home/tom/idempiere-tw-invoice-system/resources/2pack/
 # Should contain a directory with PackOut.xml inside
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: 2Pack Quality Checklist (lessons from tw-invoice)**
+
+Before committing, verify the PackOut.xml against these known pitfalls:
+
+```
+□ ZIP internal structure: {name}/dict/PackOut.xml (verify with unzip -l)
+□ AI_ChatLog_UU column: IsUpdateable=Y (NOT N, or UUID will always be NULL)
+□ All AD_Field elements have <SeqNoGrid> matching <SeqNo> (Grid View crashes without this)
+□ All AD_Field elements have <IsDisplayedGrid>Y</IsDisplayedGrid>
+□ Standard field UUIDs are stable placeholders (not randomly generated)
+□ AD_Form ClassName = "idempiere.ai.assistant.form.AIChatForm" (exact match)
+□ Menu entry has correct AD_Menu parent (e.g., under Utilities)
+□ No stale files in OSGI-INF/ (only AIAssistantModelFactory.xml + AIChatFormFactory.xml)
+```
+
+Post-install DB verification:
+```sql
+-- Verify table exists
+SELECT count(*) FROM information_schema.tables WHERE table_schema='adempiere' AND table_name='ai_chatlog';
+-- Verify form registered
+SELECT AD_Form_ID, Name, ClassName FROM AD_Form WHERE ClassName LIKE '%AIChatForm%';
+-- Verify menu entry
+SELECT Name, Action FROM AD_Menu WHERE Name = 'AI Assistant';
+-- Verify _UU column is updateable
+SELECT ColumnName, IsUpdateable FROM AD_Column WHERE AD_Table_ID = (SELECT AD_Table_ID FROM AD_Table WHERE TableName='AI_ChatLog') AND ColumnName='AI_ChatLog_UU';
+```
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add plugin/resources/
@@ -281,13 +311,14 @@ import java.util.Properties;
 import org.compiere.model.MTable;
 import org.compiere.model.PO;
 
-@org.idempiere.base.annotation.Model(table = "AI_ChatLog")
+@org.adempiere.base.Model(table = "AI_ChatLog")
 public class MAIChatLog extends PO {
 
     public static final String Table_Name = "AI_ChatLog";
 
     // Column name constants
     public static final String COLUMNNAME_AI_ChatLog_ID = "AI_ChatLog_ID";
+    public static final String COLUMNNAME_AI_ChatLog_UU = "AI_ChatLog_UU";
     public static final String COLUMNNAME_Question = "Question";
     public static final String COLUMNNAME_Answer = "Answer";
     public static final String COLUMNNAME_ModelUsed = "ModelUsed";
@@ -311,8 +342,9 @@ public class MAIChatLog extends PO {
 
     @Override
     protected POInfo initPO(Properties ctx) {
-        POInfo poi = POInfo.getPOInfo(ctx, MTable.getTable_ID(Table_Name), get_TrxName());
-        return poi;
+        int tableId = MTable.getTable_ID(Table_Name);
+        if (tableId <= 0) return null; // Guard: 2Pack may not have run yet
+        return POInfo.getPOInfo(ctx, tableId, get_TrxName());
     }
 
     // --- Getters and Setters ---
@@ -1060,3 +1092,62 @@ git push
 | Get org_ids from AD_Role_OrgAccess | Task 11 |
 | No SvrProcess / No IProcessFactory | Task 8 (not created) |
 | HMAC secret from system property | Task 11, 14 |
+| Empty HMAC secret refused (validateConfig) | Task 11 |
+| SuperUser IsAccessAllOrgs handled | Task 11 |
+| afterPackIn grants AD_Form_Access | Task 8 |
+| @Model import: org.adempiere.base.Model | Task 10 |
+| initPO tableId <= 0 guard | Task 10 |
+| AI_ChatLog_UU IsUpdateable=Y | Task 9 (checklist) |
+| SeqNoGrid / IsDisplayedGrid for Grid View | Task 9 (checklist) |
+| org.adempiere.plugin.utils in Import-Package | Task 8 |
+
+---
+
+## Lessons from tw-invoice (must-read before implementation)
+
+These pitfalls were discovered during tw-invoice-system development. Every one applies to this plugin:
+
+### Deployment SOP
+```bash
+# 1. Build
+cd plugin/ && mvn clean package -DskipTests
+
+# 2. Kill any dual JVM instances
+ps aux | grep java | grep idempiere | wc -l  # should be 1 or 0
+
+# 3. Copy JAR
+cp target/tw.idempiere.ai.assistant-*.jar /opt/idempiere-server/x86_64/plugins/
+
+# 4. Restart iDempiere (wait 30s if port in TIME_WAIT)
+sudo systemctl restart idempiere
+sleep 30
+
+# 5. Verify bundle started
+# OSGi console: telnet localhost 12612 → ss tw.idempiere.ai
+
+# 6. Verify 2Pack installed
+psql -U adempiere idempiere -c "SELECT count(*) FROM ad_package_imp WHERE Name LIKE '%AI%'"
+
+# 7. Login, test AI Chat form
+```
+
+### Development Iteration (re-install / re-deploy)
+```bash
+# If 2Pack needs to re-run (e.g., changed PackOut.xml):
+# 1. Delete 2Pack install records
+psql -U adempiere idempiere -c "
+DELETE FROM ad_package_imp_detail WHERE ad_package_imp_id IN (SELECT ad_package_imp_id FROM ad_package_imp WHERE Name LIKE '%AI%');
+DELETE FROM ad_package_imp WHERE Name LIKE '%AI%';
+"
+# 2. Bump version in ZIP filename (2Pack_1.0.0.zip → 2Pack_1.0.1.zip)
+# 3. Rebuild + redeploy + restart
+
+# If only Java code changed (no 2Pack changes):
+# Just rebuild JAR + copy to plugins/ + restart (or OSGi update)
+```
+
+### Version Bump Strategy
+- Change ZIP filename: `2Pack_1.0.0.zip` → `2Pack_1.0.1.zip`
+- Update `PackOut.xml Version=` attribute to match
+- Keep existing AD_Field UUIDs stable across versions
+- Only add new elements, don't modify existing UUIDs
