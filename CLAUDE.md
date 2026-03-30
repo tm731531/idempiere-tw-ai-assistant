@@ -36,8 +36,9 @@ iDempiere Plugin (Java)
 `docs/superpowers/specs/2026-03-30-idempiere-tw-ai-assistant-design.md` (Rev 4)
 
 ## Implementation Plans
-- Python Service: `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Rev 4)
-- iDempiere Plugin: (to be written after service is complete)
+- **End-to-End Overview:** `docs/superpowers/plans/2026-03-30-end-to-end-overview.md` — complete data flow from UI to LLM
+- **Python Service (Tasks 1-7):** `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Rev 4)
+- **iDempiere Plugin (Tasks 8-14):** `docs/superpowers/plans/2026-03-30-idempiere-plugin.md`
 
 ## Implementation Order
 1. **Phase 1 (current):** Python AI Service — 7 tasks, TDD

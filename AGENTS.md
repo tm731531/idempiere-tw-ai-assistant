@@ -13,7 +13,10 @@
 
 ### Workflow Rules
 
-1. **Always read the plan first** — `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Rev 4)
+1. **Always read the plans first:**
+   - End-to-end: `docs/superpowers/plans/2026-03-30-end-to-end-overview.md`
+   - Python (Tasks 1-7): `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Rev 4)
+   - Plugin (Tasks 8-14): `docs/superpowers/plans/2026-03-30-idempiere-plugin.md`
 2. **TDD strictly** — Write failing test → verify fail → implement → verify pass → commit
 3. **One task at a time** — Complete and commit before moving to next task
 4. **Never generate dynamic SQL** — All SQL must be in `service/app/queries/definitions/`
