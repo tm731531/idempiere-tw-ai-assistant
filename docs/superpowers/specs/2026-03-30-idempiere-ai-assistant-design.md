@@ -1,9 +1,9 @@
 # iDempiere AI Assistant — Design Spec
 
 **Date:** 2026-03-30
-**Status:** Approved (Rev 2 — post-review fixes)
+**Status:** Approved (Rev 3 — integration joint fixes)
 **Author:** Tom + Claude
-**Reviewed by:** Opus (iDempiere), Haiku (Python), Haiku (Security)
+**Reviewed by:** R1: Opus+Haiku (components), R2: Opus (verification), R3: 2×Opus (integration joints)
 
 ## Overview
 
@@ -101,7 +101,11 @@ A dedicated Form window registered via `IFormFactory` as an OSGi DS component. U
 - Clear conversation button
 
 **Behavior:**
-- Send button → disable input → show spinner → call AIChatService in background (ZK `Executions.schedule()`, NOT raw Thread) → display response → re-enable input
+- Send button → disable input → show spinner
+- Run HTTP call in `Adempiere.getThreadPoolExecutor()` via `ZkContextRunnable` (NOT `Executions.schedule()` — that blocks the UI thread)
+- Push result back to UI via `ServerPushTemplate.executeAsync()` (requires `desktop.enableServerPush(true)`)
+- Display response → re-enable input
+- Guard against: double-click (button disabled), form closed while waiting (`DesktopCleanup` listener)
 - Chat history maintained in ZK session (client-side, lost on page refresh)
 - Persistent history available via AI_ChatLog table
 
@@ -111,11 +115,13 @@ Bridge between ZK Form and Python service. This is a plain service class, not `S
 
 **Responsibilities:**
 - Validate user has AI permission (MRole.getFormAccess)
-- Get user's accessible org IDs (MRole.getOrgAccess)
-- Build HTTP request with user context + HMAC signature
-- Call Python service (`java.net.http.HttpClient`, timeout 30s)
-- Parse JSON response
-- Save to AI_ChatLog via MAIChatLog PO
+- Get user's accessible org IDs (query `AD_Role_OrgAccess` table — `MRole.getOrgAccess()` is private)
+- Build HTTP request with user context using `com.google.gson` (available in iDempiere OSGi runtime)
+- Compute HMAC-SHA256 on the raw JSON body bytes (same bytes sent over HTTP)
+- Call Python service (`java.net.http.HttpClient` singleton, timeout 30s)
+- Parse JSON response (Gson)
+- Save to AI_ChatLog via MAIChatLog PO (best-effort: try-catch, `trxName=null`, always return answer even if log fails)
+- Map HTTP errors to user-friendly messages (401→config error, 429→wait, 500→unavailable, timeout→try shorter question, connection refused→service not running)
 - Return answer to UI
 
 ### 3. MAIChatLog (PO Model)
@@ -171,8 +177,8 @@ Note: No IProcessFactory needed — AIChatService is a plain class, not SvrProce
 
 ```
 POST /ask
-Headers:  X-HMAC-Signature: <hmac-sha256 of request body with shared secret>
-Request:  {question: str, user_id: int, role_id: int, client_id: int, org_ids: list[int], session_id: str, history: list}
+Headers:  X-HMAC-Signature: <hmac-sha256 of raw request body bytes with shared secret>
+Request:  {question: str, user_id: int, role_id: int, client_id: int, org_ids: list[int]}
 Response: {answer: str, model_used: str, tokens_used: int, query_used: str|null, elapsed_ms: int}
 
 Error Response: {detail: "Request processing failed"} — NEVER includes PII or stack trace
@@ -180,10 +186,12 @@ Error Response: {detail: "Request processing failed"} — NEVER includes PII or 
 
 ### 2. HMAC Authentication
 
-- Shared secret stored in `.env` on both sides (iDempiere + Python)
-- Plugin computes `HMAC-SHA256(request_body, secret)` and sends in header
-- Python verifies before processing
-- Rejects requests with invalid/missing signature
+- Shared secret stored in `.env` (Python) and `idempiere.properties` or system property (Java)
+- HMAC is computed on the **raw HTTP body bytes** — both sides sign/verify the exact same bytes
+- Java: serialize JSON with Gson → get bytes → `javax.crypto.Mac.doFinal(bytes)` → send both body + signature header
+- Python: `await request.body()` → `hmac.new(secret, body_bytes, sha256)` → compare with header
+- No need for canonical JSON — Java and Python don't need identical serialization, because HMAC is on raw bytes as sent/received
+- Rejects requests with invalid/missing signature (HTTP 401)
 
 ### 3. Input Sanitization
 
@@ -201,9 +209,12 @@ Uses Llama 8B to classify question into categories:
 
 ### 5. Query Executor
 
-- Connects to PostgreSQL with read-only account (connection pooling via psycopg2.pool)
+- Connects to PostgreSQL with read-only account via `psycopg2.pool.ThreadedConnectionPool` (thread-safe, required because `asyncio.to_thread` uses multiple threads)
+- Pool created in FastAPI `lifespan` (not at module import time — avoids crash if DB is not ready at startup)
+- Connection string includes `options="-c search_path=adempiere"` (iDempiere tables are in `adempiere` schema, not `public`)
 - Only executes queries from the pre-defined query registry
-- All queries include `AND AD_Org_ID IN (%(org_ids)s)` filter
+- All queries include `AND AD_Org_ID = ANY(%(org_ids)s)` filter
+- Hard row limit: `fetchmany(200)` as safety net against unbounded results
 - Sonnet selects which query matches the user's question and extracts parameters
 - Returns raw result rows
 
@@ -250,7 +261,7 @@ QUERY_REGISTRY = {
 
 ### 7. LLM Caller
 
-All LLM calls wrapped in `asyncio.to_thread()` to avoid blocking FastAPI's event loop.
+All LLM calls wrapped in `asyncio.to_thread()` to avoid blocking FastAPI's event loop. All LLM clients configured with `timeout=25.0` seconds (under Java's 30s timeout to prevent orphaned requests).
 
 Model selection by router:
 - `database_query` → Sonnet (needs to understand data context)
@@ -299,9 +310,22 @@ Simple per-user rate limit in Phase 1:
 - FastAPI + uvicorn
 - LangGraph (routing)
 - langchain-anthropic + langchain-groq (models)
-- psycopg2 + psycopg2.pool (PostgreSQL read-only, connection pooling)
+- psycopg2 + psycopg2.pool.ThreadedConnectionPool (PostgreSQL read-only, thread-safe pooling)
 - pydantic (data validation)
 - contextvars (request-scoped PII mapping)
+
+## Integration Joints (critical connection points)
+
+| Joint | From → To | Key Constraint |
+|-------|-----------|----------------|
+| ZK → Thread | Form event → `getThreadPoolExecutor()` → `ServerPushTemplate` | Never block ZK event thread; `enableServerPush(true)` required |
+| Java → Python HTTP | `HttpClient` singleton → POST localhost:8900 | HMAC on raw body bytes; Gson for JSON; timeout 30s |
+| HMAC signing | Java signs raw bytes → Python verifies same raw bytes | No canonical form needed — sign what you send, verify what you receive |
+| Python → PostgreSQL | `ThreadedConnectionPool` → `adempiere` schema | `search_path=adempiere` in connection options; `fetchmany(200)` row limit |
+| PostgreSQL arrays | Python `list[int]` → psycopg2 `ANY(ARRAY[...])` | Must be `list` not `tuple` — psycopg2 adapts differently |
+| LLM timeouts | Python LLM timeout 25s < Java HTTP timeout 30s | Prevents orphaned requests |
+| Error boundary | Python HTTP status → Java user message | 401/429/500/timeout/refused → specific Chinese messages; never expose raw errors |
+| Audit log | MAIChatLog save → best-effort | `trxName=null`; try-catch; always return answer even if log write fails |
 
 ## Phased Implementation
 

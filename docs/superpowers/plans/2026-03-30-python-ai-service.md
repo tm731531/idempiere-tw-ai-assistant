@@ -1,4 +1,4 @@
-# Python AI Service — Implementation Plan (Rev 2)
+# Python AI Service — Implementation Plan (Rev 3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, FastAPI, LangGraph, langchain-anthropic, langchain-groq, psycopg2 + pool, pydantic, pytest
 
-**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 2)
+**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 3)
 
 ---
 
@@ -541,23 +541,28 @@ Expected: 6 passed
 # service/tests/test_executor.py
 import pytest
 from unittest.mock import patch, MagicMock
+import app.queries.executor as executor_module
 from app.queries.executor import QueryExecutor
 
 
 @pytest.fixture
 def executor():
-    with patch("app.queries.executor.pool") as mock_pool:
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = lambda s: mock_cursor
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        mock_pool.getconn.return_value = mock_conn
+    mock_pool = MagicMock()
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = lambda s: mock_cursor
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_pool.getconn.return_value = mock_conn
+    mock_cursor.description = [("name",), ("revenue",)]
+    mock_cursor.fetchmany.return_value = [("王大明", 50000)]
 
-        mock_cursor.description = [("name",), ("revenue",)]
-        mock_cursor.fetchall.return_value = [("王大明", 50000)]
+    # Inject mock pool (replaces the module-level pool variable)
+    executor_module.pool = mock_pool
 
-        ex = QueryExecutor()
-        yield ex, mock_cursor, mock_pool, mock_conn
+    ex = QueryExecutor()
+    yield ex, mock_cursor, mock_pool, mock_conn
+
+    executor_module.pool = None
 
 
 def test_execute_returns_dicts(executor):
@@ -590,6 +595,17 @@ def test_execute_missing_param(executor):
     ex, _, _, _ = executor
     with pytest.raises(ValueError, match="Missing parameter"):
         ex.execute("top_customers_by_revenue", {"date_from": "2026-01-01"})
+
+
+def test_execute_uses_fetchmany(executor):
+    """Verify row limit safety net."""
+    ex, mock_cursor, _, _ = executor
+    ex.execute(
+        "top_customers_by_revenue",
+        {"date_from": "2026-01-01", "date_to": "2026-03-31",
+         "ad_client_id": 11, "org_ids": [1], "limit": 5},
+    )
+    mock_cursor.fetchmany.assert_called_once_with(200)
 ```
 
 - [ ] **Step 8: Create executor.py (with connection pool)**
@@ -598,14 +614,32 @@ def test_execute_missing_param(executor):
 # service/app/queries/executor.py
 import psycopg2
 import psycopg2.pool
-from app.config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 from app.queries.registry import get_query
 
-pool = psycopg2.pool.SimpleConnectionPool(
-    minconn=1, maxconn=5,
-    host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-    user=DB_USER, password=DB_PASSWORD,
-)
+MAX_ROWS = 200
+
+# Pool is initialized by FastAPI lifespan, NOT at import time.
+# This avoids crash if DB is not reachable when service starts.
+pool: psycopg2.pool.ThreadedConnectionPool | None = None
+
+
+def init_pool(host, port, dbname, user, password):
+    """Called by FastAPI lifespan on startup."""
+    global pool
+    pool = psycopg2.pool.ThreadedConnectionPool(
+        minconn=1, maxconn=5,
+        host=host, port=port, dbname=dbname,
+        user=user, password=password,
+        options="-c search_path=adempiere",  # iDempiere tables are in adempiere schema
+    )
+
+
+def close_pool():
+    """Called by FastAPI lifespan on shutdown."""
+    global pool
+    if pool:
+        pool.closeall()
+        pool = None
 
 
 class QueryExecutor:
@@ -620,12 +654,16 @@ class QueryExecutor:
             if p not in params:
                 raise ValueError(f"Missing parameter: {p}")
 
+        # Ensure org_ids is list (not tuple) for psycopg2 ARRAY adaptation
+        if "org_ids" in params and isinstance(params["org_ids"], tuple):
+            params = {**params, "org_ids": list(params["org_ids"])}
+
         conn = pool.getconn()
         try:
             with conn.cursor() as cur:
                 cur.execute(query_def["sql"], params)
                 columns = [desc[0] for desc in cur.description]
-                rows = cur.fetchall()
+                rows = cur.fetchmany(MAX_ROWS)  # Safety net: never return unbounded results
                 return [dict(zip(columns, row)) for row in rows]
         finally:
             pool.putconn(conn)
@@ -795,15 +833,15 @@ class LLMCaller:
         self.models = {
             "sonnet": ChatAnthropic(
                 model="claude-sonnet-4-6", max_tokens=4096,
-                api_key=ANTHROPIC_API_KEY,
+                api_key=ANTHROPIC_API_KEY, timeout=25.0,
             ),
             "llama_70b": ChatGroq(
                 model="llama-3.3-70b-versatile", max_tokens=4096,
-                api_key=GROQ_API_KEY,
+                api_key=GROQ_API_KEY, timeout=25.0,
             ),
             "llama_8b": ChatGroq(
                 model="llama-3.1-8b-instant", max_tokens=2048,
-                api_key=GROQ_API_KEY,
+                api_key=GROQ_API_KEY, timeout=25.0,
             ),
         }
 
@@ -882,8 +920,8 @@ class AskRequest(BaseModel):
     role_id: int
     client_id: int
     org_ids: list[int]
-    session_id: str
-    history: list[dict] = []
+    # session_id and history removed in Phase 1 — each question is independent.
+    # Will be added in Phase 2 when conversation continuity is implemented.
 
 
 class AskResponse(BaseModel):
@@ -989,6 +1027,7 @@ Expected: FAIL
 # service/app/router.py
 import json
 import time
+from decimal import Decimal
 from app.llm.caller import LLMCaller
 from app.llm.prompts import (
     ROUTER_PROMPT, TOOL_SELECTOR_PROMPT, ANSWERER_PROMPT, CLARIFICATION_PROMPT
@@ -1056,8 +1095,13 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
             # Mask PII
             masked_rows, mapping = masker.mask(rows, query_def["pii_columns"])
 
-            # Call LLM with masked data
-            data_text = json.dumps(masked_rows, ensure_ascii=False, default=str)
+            # Call LLM with masked data (Decimal→float for proper JSON numbers)
+            def _json_default(obj):
+                if isinstance(obj, Decimal):
+                    return float(obj)
+                return str(obj)
+
+            data_text = json.dumps(masked_rows, ensure_ascii=False, default=_json_default)
             prompt = f"Question: {clean_question}\n\nQuery results:\n{data_text}"
             masked_answer, tokens = caller.call("sonnet", ANSWERER_PROMPT, prompt)
             total_tokens += tokens
@@ -1131,9 +1175,13 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 
-def _sign(body: dict, secret: str = "test-secret") -> str:
-    body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
-    return hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+def _make_signed_request(body: dict, secret: str = "test-secret") -> tuple[bytes, str]:
+    """Serialize body and compute HMAC on the exact bytes that will be sent.
+    CRITICAL: HMAC must be computed on the raw bytes, not a canonicalized form.
+    Java side must do the same — sign the exact bytes it sends."""
+    body_bytes = json.dumps(body).encode()
+    sig = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+    return body_bytes, sig
 
 
 @patch("app.router.LLMCaller")
@@ -1153,11 +1201,11 @@ def test_ask_with_valid_hmac(mock_pool, MockExecutor, MockCaller):
         "question": "What is Docker?",
         "user_id": 100, "role_id": 200,
         "client_id": 11, "org_ids": [1],
-        "session_id": "test-001",
     }
+    body_bytes, sig = _make_signed_request(body)
     response = client.post(
-        "/ask", json=body,
-        headers={"X-HMAC-Signature": _sign(body)},
+        "/ask", content=body_bytes,
+        headers={"X-HMAC-Signature": sig, "Content-Type": "application/json"},
     )
     assert response.status_code == 200
     assert "Docker" in response.json()["answer"]
@@ -1168,10 +1216,10 @@ def test_ask_without_hmac_rejected(mock_pool):
     from app.main import app
     client = TestClient(app)
 
-    response = client.post("/ask", json={
-        "question": "Hello", "user_id": 100, "role_id": 200,
-        "client_id": 11, "org_ids": [1], "session_id": "test-002",
-    })
+    body_bytes = json.dumps({"question": "Hello", "user_id": 100, "role_id": 200,
+                             "client_id": 11, "org_ids": [1]}).encode()
+    response = client.post("/ask", content=body_bytes,
+                           headers={"Content-Type": "application/json"})
     assert response.status_code == 401
 
 
@@ -1180,12 +1228,11 @@ def test_ask_with_wrong_hmac_rejected(mock_pool):
     from app.main import app
     client = TestClient(app)
 
+    body_bytes = json.dumps({"question": "Hello", "user_id": 100, "role_id": 200,
+                             "client_id": 11, "org_ids": [1]}).encode()
     response = client.post(
-        "/ask", json={
-            "question": "Hello", "user_id": 100, "role_id": 200,
-            "client_id": 11, "org_ids": [1], "session_id": "test-003",
-        },
-        headers={"X-HMAC-Signature": "wrong-signature"},
+        "/ask", content=body_bytes,
+        headers={"X-HMAC-Signature": "wrong-signature", "Content-Type": "application/json"},
     )
     assert response.status_code == 401
 
@@ -1210,11 +1257,12 @@ def test_error_returns_generic_message(mock_pool, MockExecutor, MockCaller):
 
     body = {
         "question": "test", "user_id": 100, "role_id": 200,
-        "client_id": 11, "org_ids": [1], "session_id": "test-err",
+        "client_id": 11, "org_ids": [1],
     }
+    body_bytes, sig = _make_signed_request(body)
     response = client.post(
-        "/ask", json=body,
-        headers={"X-HMAC-Signature": _sign(body)},
+        "/ask", content=body_bytes,
+        headers={"X-HMAC-Signature": sig, "Content-Type": "application/json"},
     )
     assert response.status_code == 500
     assert "王大明" not in response.json()["detail"]
@@ -1239,17 +1287,31 @@ import time
 import asyncio
 import logging
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from app.models.schemas import AskRequest, AskResponse
 from app.router import process_question
-from app.config import HMAC_SECRET
+from app.config import HMAC_SECRET, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize DB pool on startup, close on shutdown."""
+    from app.queries.executor import init_pool, close_pool
+    init_pool(DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)
+    logger.info("DB connection pool initialized (search_path=adempiere)")
+    yield
+    close_pool()
+    logger.info("DB connection pool closed")
+
 
 app = FastAPI(
     title="iDempiere AI Service",
     description="AI assistant backend for iDempiere ERP",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Rate limiter: max 20 requests per user per minute
@@ -1361,6 +1423,9 @@ GRANT SELECT ON ALL TABLES IN SCHEMA adempiere TO ai_readonly;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA adempiere
     GRANT SELECT ON TABLES TO ai_readonly;
+
+-- Set default search_path so queries can reference tables without schema prefix
+ALTER USER ai_readonly SET search_path TO adempiere;
 ```
 
 - [ ] **Step 2: Create service/CLAUDE.md**
@@ -1438,7 +1503,7 @@ git commit -m "docs: service CLAUDE.md and DB setup script"
 
 ---
 
-## Spec Coverage Check (Rev 2)
+## Spec Coverage Check (Rev 3)
 
 | Spec Requirement | Task | Fix # |
 |-----------------|------|-------|
@@ -1459,4 +1524,12 @@ git commit -m "docs: service CLAUDE.md and DB setup script"
 | PII masking (reversible) | Task 2, 5 | — |
 | LLM call with fallback | Task 4 | — |
 | System prompts | Task 4 | — |
-| Health endpoint | Task 6 | — |
+| Health endpoint | Task 6 |
+| ThreadedConnectionPool (not Simple) | Task 3 | Joint J4 |
+| search_path=adempiere | Task 3, 7 | Joint J3 |
+| HMAC on raw body bytes | Task 6 | Joint J2 |
+| LLM timeout=25s | Task 4 | Joint J8 |
+| Decimal→float serializer | Task 5 | Joint J9 |
+| fetchmany(200) row limit | Task 3 | Joint J12 |
+| Remove session_id/history (Phase 1) | Task 5 | Joint J10 |
+| Pool lifespan init/close | Task 6 | Joint J4 | — |
