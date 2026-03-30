@@ -8,14 +8,14 @@
 
 **Tech Stack:** Python 3.11+, FastAPI, langchain-anthropic, langchain-groq, psycopg2 + ThreadedConnectionPool, pydantic, pytest
 
-**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 4)
+**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-tw-ai-assistant-design.md` (Rev 4)
 
 ---
 
 ## Project Structure
 
 ```
-idempiere-ai-assistant/            # Monorepo
+idempiere-tw-ai-assistant/            # Monorepo
 ├── plugin/                        # Java iDempiere Plugin (Plan B — later)
 ├── service/                       # Python AI Service (this plan)
 │   ├── app/
@@ -72,7 +72,7 @@ idempiere-ai-assistant/            # Monorepo
 - [ ] **Step 1: Create directories and requirements.txt**
 
 ```bash
-mkdir -p /home/tom/idempiere-ai-assistant/service/{app/{queries/definitions,masking,llm,models},tests}
+mkdir -p /home/tom/idempiere-tw-ai-assistant/service/{app/{queries/definitions,masking,llm,models},tests}
 ```
 
 ```
@@ -138,8 +138,8 @@ SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8900"))
 - [ ] **Step 5: Create empty __init__.py files and conftest.py**
 
 ```bash
-touch /home/tom/idempiere-ai-assistant/service/app/__init__.py
-touch /home/tom/idempiere-ai-assistant/service/tests/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/tests/__init__.py
 ```
 
 Create conftest.py NOW (not in Task 6) — Tasks 4+ will crash without it because
@@ -160,7 +160,7 @@ os.environ.setdefault("DB_PASSWORD", "test-pass")
 - [ ] **Step 6: Install dependencies and verify**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant/service
+cd /home/tom/idempiere-tw-ai-assistant/service
 pip install -r requirements.txt
 python -c "import fastapi, psycopg2; print('OK')"
 ```
@@ -168,7 +168,7 @@ python -c "import fastapi, psycopg2; print('OK')"
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add -A
 git commit -m "feat: project scaffold with config, HMAC secret, and dependencies"
 ```
@@ -283,7 +283,7 @@ def test_sanitize_input():
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant/service
+cd /home/tom/idempiere-tw-ai-assistant/service
 pytest tests/test_masking.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.masking'`
@@ -365,7 +365,7 @@ class PIIMasker:
 - [ ] **Step 5: Create __init__.py**
 
 ```bash
-touch /home/tom/idempiere-ai-assistant/service/app/masking/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/masking/__init__.py
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -378,7 +378,7 @@ Expected: 10 passed
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add service/app/masking/ service/tests/test_masking.py
 git commit -m "feat: PII masking layer with [PII_*] tokens and input sanitization"
 ```
@@ -538,8 +538,8 @@ def get_query_descriptions() -> str:
 - [ ] **Step 5: Create __init__.py files**
 
 ```bash
-touch /home/tom/idempiere-ai-assistant/service/app/queries/__init__.py
-touch /home/tom/idempiere-ai-assistant/service/app/queries/definitions/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/queries/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/queries/definitions/__init__.py
 ```
 
 - [ ] **Step 6: Run registry tests**
@@ -693,7 +693,7 @@ Expected: 5 passed
 - [ ] **Step 10: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add service/app/queries/ service/tests/test_registry.py service/tests/test_executor.py
 git commit -m "feat: query registry with org_ids filter and connection-pooled executor"
 ```
@@ -885,7 +885,7 @@ class LLMCaller:
 - [ ] **Step 5: Create __init__.py**
 
 ```bash
-touch /home/tom/idempiere-ai-assistant/service/app/llm/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/llm/__init__.py
 ```
 
 - [ ] **Step 6: Run tests**
@@ -898,7 +898,7 @@ Expected: 4 passed
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add service/app/llm/ service/tests/test_caller.py
 git commit -m "feat: LLM caller with fallback and token usage extraction"
 ```
@@ -939,7 +939,7 @@ class AskResponse(BaseModel):
 ```
 
 ```bash
-touch /home/tom/idempiere-ai-assistant/service/app/models/__init__.py
+touch /home/tom/idempiere-tw-ai-assistant/service/app/models/__init__.py
 ```
 
 - [ ] **Step 2: Write router tests (with sanitization and [PII_*] tokens)**
@@ -1182,7 +1182,7 @@ Expected: 5 passed
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add service/app/router.py service/app/models/ service/tests/test_router.py
 git commit -m "feat: router pipeline with input sanitization, org_ids, and token tracking"
 ```
@@ -1428,7 +1428,7 @@ Expected: All passed (~28 tests)
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add service/app/main.py service/tests/conftest.py service/tests/test_integration.py
 git commit -m "feat: FastAPI endpoint with HMAC auth, rate limiting, and generic error responses"
 ```
@@ -1501,7 +1501,7 @@ pytest tests/ -v
 - [ ] **Step 3: Create .env, start server, manual test**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant/service
+cd /home/tom/idempiere-tw-ai-assistant/service
 cp .env.example .env
 # Edit .env with real credentials
 
@@ -1535,7 +1535,7 @@ PYEOF
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /home/tom/idempiere-ai-assistant
+cd /home/tom/idempiere-tw-ai-assistant
 git add scripts/ service/CLAUDE.md
 git commit -m "docs: service CLAUDE.md and DB setup script"
 ```

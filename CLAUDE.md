@@ -33,7 +33,7 @@ iDempiere Plugin (Java)
 10. **Org-level filtering** — All SQL queries include AD_Org_ID = ANY(org_ids) filter
 
 ## Design Spec
-`docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 4)
+`docs/superpowers/specs/2026-03-30-idempiere-tw-ai-assistant-design.md` (Rev 4)
 
 ## Implementation Plans
 - Python Service: `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Rev 4)
