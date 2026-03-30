@@ -926,6 +926,7 @@ class AskRequest(BaseModel):
     role_id: int
     client_id: int
     org_ids: list[int]
+    language: str = "zh_TW"  # User's preferred language (from AD_Language)
     # session_id and history removed in Phase 1 — each question is independent.
     # Will be added in Phase 2 when conversation continuity is implemented.
 
@@ -1249,7 +1250,7 @@ def test_ask_with_valid_hmac(client, mock_router):
     body = {"question": "What is Docker?", "user_id": 100, "role_id": 200,
             "client_id": 11, "org_ids": [1]}
     body_bytes, sig = _make_signed_request(body)
-    response = client.post("/ask", content=body_bytes,
+    response = client.post("/v1/ask", content=body_bytes,
                            headers={"X-HMAC-Signature": sig, "Content-Type": "application/json"})
     assert response.status_code == 200
     assert "Docker" in response.json()["answer"]
@@ -1258,7 +1259,7 @@ def test_ask_with_valid_hmac(client, mock_router):
 def test_ask_without_hmac_rejected(client):
     body_bytes = json.dumps({"question": "Hello", "user_id": 100, "role_id": 200,
                              "client_id": 11, "org_ids": [1]}).encode()
-    response = client.post("/ask", content=body_bytes,
+    response = client.post("/v1/ask", content=body_bytes,
                            headers={"Content-Type": "application/json"})
     assert response.status_code == 401
 
@@ -1266,7 +1267,7 @@ def test_ask_without_hmac_rejected(client):
 def test_ask_with_wrong_hmac_rejected(client):
     body_bytes = json.dumps({"question": "Hello", "user_id": 100, "role_id": 200,
                              "client_id": 11, "org_ids": [1]}).encode()
-    response = client.post("/ask", content=body_bytes,
+    response = client.post("/v1/ask", content=body_bytes,
                            headers={"X-HMAC-Signature": "wrong", "Content-Type": "application/json"})
     assert response.status_code == 401
 
@@ -1284,7 +1285,7 @@ def test_error_returns_generic_message(client, mock_router):
     body = {"question": "test", "user_id": 100, "role_id": 200,
             "client_id": 11, "org_ids": [1]}
     body_bytes, sig = _make_signed_request(body)
-    response = client.post("/ask", content=body_bytes,
+    response = client.post("/v1/ask", content=body_bytes,
                            headers={"X-HMAC-Signature": sig, "Content-Type": "application/json"})
     assert response.status_code == 500
     assert "王大明" not in response.json()["detail"]
@@ -1358,7 +1359,7 @@ def _check_rate_limit(user_id: int) -> bool:
     return True
 
 
-@app.post("/ask", response_model=AskResponse)
+@app.post("/v1/ask", response_model=AskResponse)
 async def ask(request: Request):
     """Process a natural language question about ERP data."""
     # Read raw body for HMAC verification
@@ -1458,6 +1459,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA adempiere
 
 -- Set default search_path so queries can reference tables without schema prefix
 ALTER USER ai_readonly SET search_path TO adempiere;
+
+-- Prevent runaway queries — 10 second hard limit per statement
+ALTER ROLE ai_readonly SET statement_timeout = '10s';
 ```
 
 - [ ] **Step 2: Create service/CLAUDE.md**

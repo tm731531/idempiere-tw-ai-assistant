@@ -1,7 +1,7 @@
 # iDempiere AI Assistant — Design Spec
 
 **Date:** 2026-03-30
-**Status:** Approved (Rev 4 — architect/dev/PM fixes)
+**Status:** Approved (Rev 5 — joint review: old system × new system)
 **Author:** Tom + Claude
 **Reviewed by:** R1: Opus+Haiku (components), R2: Opus (verify), R3: 2×Opus (joints), R4: 3×Opus (arch/dev/PM)
 
@@ -177,9 +177,9 @@ Note: No IProcessFactory needed — AIChatService is a plain class, not SvrProce
 ### 1. FastAPI Endpoint
 
 ```
-POST /ask
+POST /v1/ask
 Headers:  X-HMAC-Signature: <hmac-sha256 of raw request body bytes with shared secret>
-Request:  {question: str, user_id: int, role_id: int, client_id: int, org_ids: list[int]}
+Request:  {question: str, user_id: int, role_id: int, client_id: int, org_ids: list[int], language: str = "zh_TW"}
 Response: {answer: str, model_used: str, tokens_used: int, query_used: str|null, elapsed_ms: int}
 
 Error Response: {detail: "Request processing failed"} — NEVER includes PII or stack trace
@@ -320,7 +320,7 @@ Simple per-user rate limit in Phase 1:
 
 | Joint | From → To | Key Constraint |
 |-------|-----------|----------------|
-| ZK → Thread | Form event → `getThreadPoolExecutor()` → `ServerPushTemplate` | Never block ZK event thread; `enableServerPush(true)` required |
+| ZK → Thread | Form event → `AI_THREAD_POOL` (isolated, max 4) → `ServerPushTemplate` | Never use shared `getThreadPoolExecutor()`; `enableServerPush(true)` required |
 | Java → Python HTTP | `HttpClient` singleton → POST localhost:8900 | HMAC on raw body bytes; Gson for JSON; timeout 30s |
 | HMAC signing | Java signs raw bytes → Python verifies same raw bytes | No canonical form needed — sign what you send, verify what you receive |
 | Python → PostgreSQL | `ThreadedConnectionPool` → `adempiere` schema | `search_path=adempiere` in connection options; `fetchmany(200)` row limit |

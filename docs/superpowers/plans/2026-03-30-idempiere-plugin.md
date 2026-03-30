@@ -491,6 +491,7 @@ public class AIChatService {
         body.addProperty("role_id", adRoleId);
         body.addProperty("client_id", adClientId);
         body.add("org_ids", gson.toJsonTree(orgIds));
+        body.addProperty("language", Env.getAD_Language(ctx)); // e.g. "zh_TW"
 
         String jsonBody = gson.toJson(body);
 
@@ -534,7 +535,7 @@ public class AIChatService {
     private String callService(String jsonBody, String signature) throws AIChatException {
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(serviceUrl + "/ask"))
+                .uri(URI.create(serviceUrl + "/v1/ask"))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
                 .header("X-HMAC-Signature", signature)
@@ -643,6 +644,8 @@ git commit -m "feat: AIChatService — HTTP client, HMAC signing, Gson, error ma
 package idempiere.ai.assistant.form;
 
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.util.ServerPushTemplate;
@@ -673,6 +676,12 @@ public class AIChatForm extends ADForm {
 
     private static final CLogger log = CLogger.getCLogger(AIChatForm.class);
     private static final long serialVersionUID = 1L;
+
+    // ISOLATED thread pool — do NOT use Adempiere.getThreadPoolExecutor()
+    // That is shared with all iDempiere background tasks. AI requests (up to 30s)
+    // would starve scheduled processes, async document processing, etc.
+    // Max 4 concurrent AI requests system-wide.
+    private static final ExecutorService AI_THREAD_POOL = Executors.newFixedThreadPool(4);
 
     private Div chatPanel;
     private Textbox inputBox;
@@ -756,8 +765,8 @@ public class AIChatForm extends ADForm {
         // 4. Capture context for background thread
         final String q = question;
 
-        // 5. Run HTTP call in iDempiere's thread pool (NOT in ZK event thread)
-        org.compiere.Adempiere.getThreadPoolExecutor().submit(new ZkContextRunnable() {
+        // 5. Run HTTP call in ISOLATED thread pool (NOT iDempiere's shared pool)
+        AI_THREAD_POOL.submit(new ZkContextRunnable() {
             @Override
             protected void doRun() {
                 if (formClosed) return;
@@ -993,7 +1002,7 @@ git push
 | Spec Requirement | Task |
 |-----------------|------|
 | ZK Form via IFormFactory | Task 12, 13 |
-| Background thread (getThreadPoolExecutor + ZkContextRunnable) | Task 12 |
+| Isolated thread pool (NOT shared getThreadPoolExecutor) | Task 12 |
 | ServerPushTemplate.executeAsync | Task 12 |
 | desktop.enableServerPush(true) | Task 12 |
 | DesktopCleanup guard | Task 12 |
