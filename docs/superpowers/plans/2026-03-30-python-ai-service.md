@@ -1145,21 +1145,32 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
     # Step 0: Sanitize input — strip PII token patterns
     clean_question = _masker.sanitize_input(question)
 
-    # Step 1: Classify AND select query in ONE Sonnet call (not 2 separate calls).
-    # Phase 1 has only 3 queries — a separate classifier is overkill.
-    selector_prompt = CLASSIFY_AND_SELECT_PROMPT.format(
-        query_descriptions=get_query_descriptions()
-    )
-    context = f"Question: {clean_question}"
-    selection_raw, tokens = caller.call("sonnet", selector_prompt, context)
-    total_tokens += tokens
+    # Step 1: Classify AND select query in ONE Sonnet call.
+    # If classify completely fails (API down, both models fail), gracefully
+    # return a "service unavailable" message instead of crashing.
+    try:
+        selector_prompt = CLASSIFY_AND_SELECT_PROMPT.format(
+            query_descriptions=get_query_descriptions()
+        )
+        context = f"Question: {clean_question}"
+        selection_raw, tokens = caller.call("sonnet", selector_prompt, context)
+        total_tokens += tokens
+    except Exception:
+        # Both primary and fallback LLM failed — graceful degradation
+        return {
+            "answer": "AI service is temporarily unavailable. Please try again later.",
+            "model_used": "none",
+            "tokens_used": 0,
+            "query_used": None,
+            "elapsed_ms": int((time.time() - start) * 1000),
+        }
 
     try:
         selection = json.loads(selection_raw.strip())
         category = selection.get("category", "general_knowledge")
         query_name = selection.get("query_name", "none")
         params = selection.get("params", {})
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, AttributeError, TypeError):
         category = "general_knowledge"
         query_name = "none"
         params = {}
