@@ -3,8 +3,8 @@
 **Purpose:** This document maps the ENTIRE data flow from user keystroke to AI answer, across all system boundaries. Implementation plans for each layer reference this as the authoritative flow.
 
 **Related Plans:**
-- Python Service: `2026-03-30-python-ai-service.md` (Rev 4) — Tasks 1-7
-- iDempiere Plugin: `2026-03-30-idempiere-plugin.md` — Tasks 8-14
+- Python Service: `2026-03-30-python-ai-service.md` (Rev 5) — Tasks 1-7
+- iDempiere Plugin: `2026-03-30-idempiere-plugin.md` (Rev 5) — Tasks 8-14
 
 **Implementation Order:** Bottom-up (Python first, Plugin second), but this overview covers top-down.
 
@@ -38,21 +38,21 @@ USER                    iDEMPIERE PLUGIN (Java/OSGi)              PYTHON SERVICE
       │                       b. Show "AI 思考中..." bubble
       │                       c. desktop.enableServerPush(true)
       │                          │
-      │                    7. Background thread:
-      │                       Adempiere.getThreadPoolExecutor()
-      │                       .submit(new ZkContextRunnable() {
+      │                    7. Background thread (ISOLATED pool):
+      │                       AI_THREAD_POOL.submit(
+      │                       new ZkContextRunnable() {
       │                          │
       │                          ▼
       │                    8. AIChatService.ask():
       │                       a. Get org_ids from AD_Role_OrgAccess
       │                       b. Build JSON body (Gson):
       │                          {question, user_id, role_id,
-      │                           client_id, org_ids}
+      │                           client_id, org_ids, language}
       │                       c. Compute HMAC-SHA256 on raw bytes
-      │                       d. HTTP POST localhost:8900/ask
+      │                       d. HTTP POST localhost:8900/v1/ask
       │                          + X-HMAC-Signature header
       │                          │
-      │                          │ HTTP POST                        9. FastAPI /ask endpoint:
+      │                          │ HTTP POST                        9. FastAPI /v1/ask endpoint:
       │                          │─────────────────────────────────────▶ a. Read raw body bytes
       │                          │                                      b. Verify HMAC signature
       │                          │                                         → 401 if invalid

@@ -1,4 +1,4 @@
-# Python AI Service — Implementation Plan (Rev 4)
+# Python AI Service — Implementation Plan (Rev 5)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, FastAPI, langchain-anthropic, langchain-groq, psycopg2 + ThreadedConnectionPool, pydantic, pytest
 
-**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-tw-ai-assistant-design.md` (Rev 4)
+**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-tw-ai-assistant-design.md` (Rev 5)
 
 ---
 

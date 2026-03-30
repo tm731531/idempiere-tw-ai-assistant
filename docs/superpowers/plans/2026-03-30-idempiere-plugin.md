@@ -10,7 +10,7 @@
 
 **Prerequisites:** Python AI Service (Tasks 1-7) must be running on localhost:8900.
 
-**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 4)
+**Design Spec:** `docs/superpowers/specs/2026-03-30-idempiere-ai-assistant-design.md` (Rev 5)
 
 **End-to-End Flow:** `docs/superpowers/plans/2026-03-30-end-to-end-overview.md`
 

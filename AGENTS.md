@@ -58,7 +58,7 @@
 **Java plugin:**
 - Use isolated `Executors.newFixedThreadPool(4)` for AI requests
 - org_ids from `AD_Role_OrgAccess` table (NOT `MRole.getOrgAccess()` which is private)
-- `AI_SERVICE_URL` from `MSysConfig`, `AI_HMAC_SECRET` from `System.getProperty`
+- `AI_SERVICE_URL` and `AI_HMAC_SECRET` both from `System.getProperty` (Phase 1; Phase 2 may move URL to MSysConfig)
 - Error mapping: 401→系統設定錯誤, 429→請求過於頻繁, 500→暫時無法使用
 
 ### Agent Team Resource Limits
