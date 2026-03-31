@@ -1,6 +1,7 @@
 # iDempiere TW AI Assistant
 
 ## Domain Brain: idempiere-osgi-bundle, idempiere-2pack, idempiere-po-model, python-llm-integration
+## Domain Skill: idempiere-zul-form, idempiere-mapped-model-factory-service, idempiere-osgi-event-handler
 
 ## What This Is
 A monorepo containing two sub-projects that together provide an AI-powered Q&A assistant for iDempiere ERP:

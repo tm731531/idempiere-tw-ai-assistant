@@ -31,7 +31,9 @@
 
 ### Pre-Flight Checklist (before any agent starts work)
 
-- [ ] Read CLAUDE.md (this project)
+- [ ] Read CLAUDE.md → get Domain Brain + Domain Skill declarations
+- [ ] Read Domain Brains: `brain/idempiere-osgi-bundle.md`, `brain/idempiere-2pack.md`, `brain/idempiere-po-model.md`, `brain/python-llm-integration.md`
+- [ ] Read Domain Skills (invoke via Skill tool): `idempiere-zul-form`, `idempiere-mapped-model-factory-service`, `idempiere-osgi-event-handler`
 - [ ] Read the design spec in docs/superpowers/specs/ (Rev 5)
 - [ ] Read the relevant implementation plan (Python or Plugin)
 - [ ] Verify .env exists with API keys (service/)
