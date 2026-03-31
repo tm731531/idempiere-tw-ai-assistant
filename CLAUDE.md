@@ -1,5 +1,7 @@
 # iDempiere TW AI Assistant
 
+## Domain Brain: idempiere-osgi-bundle, idempiere-2pack, idempiere-po-model, python-llm-integration
+
 ## What This Is
 A monorepo containing two sub-projects that together provide an AI-powered Q&A assistant for iDempiere ERP:
 - `service/` — Python FastAPI backend (Sonnet classify+select, PII masking, pre-defined SQL queries)
