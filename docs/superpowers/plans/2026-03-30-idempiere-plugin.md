@@ -730,7 +730,6 @@ import org.adempiere.webui.util.ServerPushTemplate;
 import org.adempiere.webui.util.ZkContextRunnable;
 import org.compiere.util.CLogger;
 import org.compiere.util.Env;
-import org.idempiere.ui.zk.annotation.Form;
 import org.zkoss.zk.ui.Desktop;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.Events;
@@ -749,7 +748,8 @@ import idempiere.ai.assistant.service.AIChatService;
 import idempiere.ai.assistant.service.AIChatService.AIChatException;
 import idempiere.ai.assistant.service.AIChatService.AIChatResponse;
 
-@Form
+// NO @Form annotation — we use explicit IFormFactory (Task 13) instead.
+// Using both @Form + IFormFactory causes double registration.
 public class AIChatForm extends ADForm {
 
     private static final CLogger log = CLogger.getCLogger(AIChatForm.class);
