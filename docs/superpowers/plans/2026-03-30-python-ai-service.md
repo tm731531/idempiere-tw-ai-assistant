@@ -1090,6 +1090,32 @@ def test_clarification_no_db(mock_deps):
     result = router_module.process_question("那個", client_id=11, org_ids=[1])
     assert "specific" in result["answer"].lower() or "具體" in result["answer"]
     executor.execute.assert_not_called()
+
+
+def test_database_query_no_matching_query(mock_deps):
+    """When classify says database_query but no query matches → structured refusal, no hallucination."""
+    caller, executor = mock_deps
+    caller.call.side_effect = [
+        ('{"category": "database_query", "query_name": "none", "params": {}, "reason": "no match"}', 10),
+    ]
+    result = router_module.process_question("應收帳款最高的客戶？", client_id=11, org_ids=[1])
+    assert "目前" in result["answer"] and "支援" in result["answer"]
+    assert result["model_used"] == "none"
+    executor.execute.assert_not_called()
+    # LLM should NOT be called a second time (no hallucination)
+    assert caller.call.call_count == 1
+
+
+def test_invalid_json_from_llm(mock_deps):
+    """LLM returns garbage instead of JSON → fallback to general_knowledge."""
+    caller, executor = mock_deps
+    caller.call.side_effect = [
+        ("not valid json {{{", 10),  # classify fails to parse
+        ("General answer without DB data.", 30),
+    ]
+    result = router_module.process_question("some question", client_id=11, org_ids=[1])
+    assert result["answer"] == "General answer without DB data."
+    executor.execute.assert_not_called()
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -1142,7 +1168,15 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
     caller = _get_caller()
     executor = _get_executor()
 
-    # Step 0: Sanitize input — strip PII token patterns
+    # Step 0: Validate org access
+    if not org_ids:
+        return {
+            "answer": "No organization access configured. Please contact admin.",
+            "model_used": "none", "tokens_used": 0,
+            "query_used": None, "elapsed_ms": int((time.time() - start) * 1000),
+        }
+
+    # Step 0b: Sanitize input — strip PII token patterns
     clean_question = _masker.sanitize_input(question)
 
     # Step 1: Classify AND select query in ONE Sonnet call.
@@ -1181,7 +1215,19 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
         total_tokens += tokens
         model_used = "llama_8b"
 
-    elif category == "database_query" and query_name != "none" and get_query(query_name) is not None:
+    elif category == "database_query" and query_name == "none":
+        # No matching pre-defined query — DON'T let LLM hallucinate.
+        # Return structured refusal with list of supported queries.
+        from app.queries.registry import get_query_descriptions
+        supported = get_query_descriptions()
+        answer = (
+            "目前 AI 助理尚未支援此類查詢。\n\n"
+            "目前支援的查詢類型：\n" + supported + "\n\n"
+            "請依據上述類型重新描述您的問題。"
+        )
+        model_used = "none"
+
+    elif category == "database_query" and get_query(query_name) is not None:
         # SECURITY: Force-inject ad_client_id and org_ids from request context.
         # NEVER trust LLM-extracted values for these — they could be hallucinated or injected.
         params["ad_client_id"] = client_id
@@ -1201,7 +1247,10 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
             return str(obj)
 
         data_text = json.dumps(masked_rows, ensure_ascii=False, default=_json_default)
-        prompt = f"Question: {clean_question}\n\nQuery results:\n{data_text}"
+        truncation_note = ""
+        if len(masked_rows) >= 200:
+            truncation_note = "\n(Note: results truncated to 200 rows. There may be more data.)"
+        prompt = f"Question: {clean_question}\n\nQuery results:\n{data_text}{truncation_note}"
         masked_answer, tokens = caller.call("sonnet", ANSWERER_PROMPT, prompt)
         total_tokens += tokens
         model_used = "sonnet"
@@ -1230,7 +1279,7 @@ def process_question(question: str, client_id: int, org_ids: list[int]) -> dict:
 ```bash
 pytest tests/test_router.py -v
 ```
-Expected: 5 passed
+Expected: 7 passed (5 original + 2 new: no_matching_query, invalid_json)
 
 - [ ] **Step 6: Commit**
 
@@ -1476,7 +1525,7 @@ Expected: 5 passed
 ```bash
 pytest tests/ -v
 ```
-Expected: All passed (35 tests: 10+6+5+4+5+5)
+Expected: All passed (37 tests: 10+6+5+4+7+5)
 
 - [ ] **Step 7: Commit**
 

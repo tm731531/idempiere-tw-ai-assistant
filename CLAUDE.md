@@ -87,7 +87,7 @@ pytest tests/ -v
 - Switch to MOCK_LLM=false + real API keys for production
 
 ## Phase 1 Done Criteria
-- All pytest pass (35 tests: 10+6+5+4+5+5)
+- All pytest pass (37 tests: 10+6+5+4+7+5)
 - `/health` returns `{"status": "ok", "db": "connected"}`
 - One successful `/v1/ask` round-trip with real LLM + real DB via manual test script
 - Plugin deployed, AI Chat form opens, end-to-end Q&A works

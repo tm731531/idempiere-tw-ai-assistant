@@ -88,6 +88,7 @@ iDempiere Plugin:
 8. **Input sanitization** — User questions are stripped of `[PII_*]` patterns before any LLM call to prevent prompt injection
 9. **Org-level filtering** — All SQL queries include AD_Org_ID filter based on user's role access
 10. **Context params from request only** — `ad_client_id` and `org_ids` are ALWAYS injected from the HTTP request context into query params, NEVER from LLM output (prevents prompt injection changing security scope)
+11. **PII boundary in user questions** — PII masking only protects DB query results sent to LLM. If a user mentions a real name in their question (e.g., "王大明 上個月買了什麼"), that name reaches the LLM in plaintext during classification. This is an intentional tradeoff: masking the question would make classification impossible. Document this boundary clearly to stakeholders.
 
 ## iDempiere Plugin Components
 
