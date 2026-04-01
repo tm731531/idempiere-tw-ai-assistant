@@ -58,6 +58,9 @@ if [ $? -eq 0 ]; then
     cd "$PLUGIN_DIR"
     jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" OSGI-INF/
     
+    # Add resources/META-INF (contains 2Pack)
+    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" resources/
+    
     echo ""
     echo "========================================="
     echo "Build complete! (Core only - no Form UI)"

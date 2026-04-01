@@ -4,9 +4,9 @@ Bundle-Name: iDempiere TW AI Assistant
 Bundle-SymbolicName: tw.idempiere.ai.assistant
 Bundle-Version: 1.0.0
 Bundle-Activator: idempiere.ai.assistant.AIAssistantActivator
-Bundle-ClassPath: .
+Bundle-ClassPath: ., resources/META-INF/2Pack_1.0.0.zip
 Bundle-RequiredExecutionEnvironment: JavaSE-17
-Service-Component: OSGI-INF/AIAssistantModelFactory.xml
+Service-Component: OSGI-INF/AIAssistantModelFactory.xml, OSGI-INF/AIChatFormFactory.xml
 Import-Package: com.google.gson,
  javax.crypto,
  javax.crypto.spec,
