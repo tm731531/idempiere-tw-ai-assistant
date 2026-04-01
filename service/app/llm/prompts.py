@@ -1,48 +1,33 @@
 # service/app/llm/prompts.py
-"""System prompts for LLM calls with intelligent routing."""
+"""System prompts for LangGraph-based agent with Tools."""
 
-# Router prompt - uses cheap model (Llama 8B) for initial classification
-ROUTER_PROMPT = """You are a question classifier for iDempiere ERP. Classify the user's question into one of these categories:
+# Agent system prompt - defines available tools and behavior
+AGENT_SYSTEM_PROMPT = """You are an AI assistant for iDempiere ERP. You have access to these tools:
 
-**Categories:**
-1. "database_query" - Question asks about specific ERP data (orders, customers, revenue, etc.)
-2. "general_knowledge" - Question about general topics, ERP concepts, or non-data questions
-3. "clarification" - Question is too vague or needs more context
+**Tools:**
+1. `query_executor` - Execute pre-defined SQL queries to retrieve ERP data
+   - Use when user asks about orders, customers, revenue, products, etc.
+   - Available queries: {query_descriptions}
 
-**Examples:**
-- "上個月營收最高的客戶" → database_query
-- "什麼是 iDempiere?" → general_knowledge
-- "訂單" → clarification (too vague)
-- "幫我查一下 order" → clarification (which order?)
+2. `general_knowledge` - Answer general questions about ERP, iDempiere, or other topics
+   - Use when no database query is needed
 
-User question: {question}
+3. `clarification` - Ask for more details when question is too vague
+   - Use when you need more context to help
 
-Respond with ONLY the category name (database_query, general_knowledge, or clarification)."""
+**Process:**
+1. Understand the user's question
+2. Choose the appropriate tool
+3. If using query_executor, select the best query and extract parameters
+4. Execute and return results
 
-# Query selector prompt - uses Claude Sonnet for complex matching
-QUERY_SELECTOR_PROMPT = """You are an ERP data expert. Given a user question and available queries, select the best matching query and extract parameters.
+**Important:**
+- Always respond in the same language as the user's question
+- For database queries, format results clearly
+- If unsure, ask for clarification
+"""
 
-Available queries:
-{query_descriptions}
-
-User question: {question}
-
-Respond in JSON format:
-{{
-  "query_name": "<best matching query name>",
-  "params": {{
-    "date_from": "YYYY-MM-DD or null",
-    "date_to": "YYYY-MM-DD or null",
-    "document_no": "string or null",
-    "year": "YYYY or null",
-    "limit": "number (default 5)"
-  }},
-  "confidence": "high/medium/low"
-}}
-
-If no query matches well, set query_name to null."""
-
-# Answer generation prompts for different model types
+# Answer generation prompts for different scenarios
 DATABASE_ANSWER_PROMPT = """You are an ERP data analyst. Based on the query results, answer the user's question in {language}.
 
 Query: {query_name}

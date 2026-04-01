@@ -6,9 +6,9 @@ fastapi>=0.115
 uvicorn>=0.34
 
 # LLM integration
-langchain-anthropic>=0.3  # Claude (primary)
-langchain-groq>=0.2  # Groq Llama (fallback)
-# dashscope>=1.14  # Qwen (Alibaba DashScope) - temporarily disabled
+langchain-anthropic>=0.3  # Claude
+langchain-groq>=0.2  # Groq Llama
+langgraph>=0.2  # Agent orchestration
 
 # Database
 psycopg2-binary>=2.9

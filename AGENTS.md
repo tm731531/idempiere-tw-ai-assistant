@@ -25,7 +25,7 @@
 4. **Never generate dynamic SQL** — All SQL must be in `service/app/queries/definitions/`
 5. **Reference tw-invoice for Java patterns** — `/home/tom/idempiere-tw-invoice-system/`
 6. **Context params from request** — `ad_client_id`/`org_ids` always from HTTP request, never from LLM output
-7. **No LangGraph** — Removed from dependencies. Plain Python functions for routing.
+7. **LangGraph for orchestration** — Uses LangGraph StateGraph for intelligent routing + Tools for SQL execution.
 8. **Thread pool isolation** — Plugin uses `AI_THREAD_POOL`, NOT `Adempiere.getThreadPoolExecutor()`
 9. **API versioning** — All endpoints use `/v1/` prefix
 
