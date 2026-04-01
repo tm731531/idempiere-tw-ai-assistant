@@ -15,8 +15,7 @@ public class AIAssistantActivator extends Incremental2PackActivator {
 
     @Override
     protected void afterPackIn() {
-        // Grant all active roles access to the AI Assistant menu/process
-        // This runs after 2Pack is loaded
+        // Grant all active roles access to the AI Assistant process
         String sql = "INSERT INTO AD_Process_Access (AD_Process_Access_UU, AD_Client_ID, AD_Org_ID, "
             + "AD_Role_ID, AD_Process_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
             + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, p.AD_Process_ID, 'Y', "
@@ -28,11 +27,9 @@ public class AIAssistantActivator extends Incremental2PackActivator {
             + "  WHERE pa.AD_Role_ID = r.AD_Role_ID AND pa.AD_Process_ID = p.AD_Process_ID)";
         
         int count = DB.executeUpdate(sql, null);
-        if (count > 0) {
-            log.info("Granted AI Assistant access to " + count + " roles");
-        }
+        log.info("Granted AI Assistant process access to " + count + " roles");
         
-        // Also grant menu access
+        // Grant menu access
         sql = "INSERT INTO AD_Menu_Access (AD_Menu_Access_UU, AD_Client_ID, AD_Org_ID, "
             + "AD_Role_ID, AD_Menu_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
             + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, m.AD_Menu_ID, 'Y', "
@@ -44,8 +41,6 @@ public class AIAssistantActivator extends Incremental2PackActivator {
             + "  WHERE ma.AD_Role_ID = r.AD_Role_ID AND ma.AD_Menu_ID = m.AD_Menu_ID)";
         
         count = DB.executeUpdate(sql, null);
-        if (count > 0) {
-            log.info("Granted AI Assistant menu access to " + count + " roles");
-        }
+        log.info("Granted AI Assistant menu access to " + count + " roles");
     }
 }
