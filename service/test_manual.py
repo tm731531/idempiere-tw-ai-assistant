@@ -14,7 +14,7 @@ Usage:
 import hashlib
 import hmac
 import json
-import requests
+import httpx
 
 # Configuration
 SERVICE_URL = "http://localhost:8900"
@@ -33,7 +33,7 @@ def compute_hmac(body_bytes: bytes) -> str:
 def test_health():
     """Test /health endpoint."""
     print("Testing /health...")
-    response = requests.get(f"{SERVICE_URL}/health")
+    response = httpx.get(f"{SERVICE_URL}/health")
     print(f"  Status: {response.status_code}")
     print(f"  Response: {response.json()}")
     assert response.status_code == 200
@@ -61,7 +61,7 @@ def test_ask_question():
     signature = compute_hmac(body_bytes)
     
     # Send request
-    response = requests.post(
+    response = httpx.post(
         f"{SERVICE_URL}/v1/ask",
         content=body_bytes,
         headers={
@@ -90,7 +90,7 @@ def test_invalid_hmac():
     body = {"question": "test", "user_id": 1, "role_id": 1, "client_id": 1, "org_ids": [1]}
     body_bytes = json.dumps(body).encode("utf-8")
     
-    response = requests.post(
+    response = httpx.post(
         f"{SERVICE_URL}/v1/ask",
         content=body_bytes,
         headers={"X-HMAC-Signature": "invalid-signature"},
@@ -107,7 +107,7 @@ def test_missing_hmac():
     
     body = {"question": "test", "user_id": 1, "role_id": 1, "client_id": 1, "org_ids": [1]}
     
-    response = requests.post(
+    response = httpx.post(
         f"{SERVICE_URL}/v1/ask",
         json=body,
     )
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         print("=" * 60)
         print("All tests completed!")
         print("=" * 60)
-    except requests.exceptions.ConnectionError as e:
+    except httpx.ConnectError as e:
         print(f"\n✗ Connection error: Could not connect to {SERVICE_URL}")
         print("Make sure the service is running:")
         print(f"  cd service/ && ./venv/bin/python -m app.main")
