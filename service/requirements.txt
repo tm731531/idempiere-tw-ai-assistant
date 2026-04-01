@@ -1,0 +1,23 @@
+# service/requirements.txt
+# Python AI Service dependencies for iDempiere TW AI Assistant
+
+# Web framework
+fastapi>=0.115
+uvicorn>=0.34
+
+# LLM integration
+langchain-anthropic>=0.3
+langchain-groq>=0.2
+
+# Database
+psycopg2-binary>=2.9
+
+# Configuration
+python-dotenv>=1.0
+
+# Data validation
+pydantic>=2.0
+
+# Testing
+pytest>=8.0
+httpx>=0.27
