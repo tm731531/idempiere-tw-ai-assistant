@@ -6,9 +6,9 @@
 
     <parent>
         <groupId>org.idempiere</groupId>
-        <artifactId>org.adempiere.parent</artifactId>
+        <artifactId>org.idempiere.parent</artifactId>
         <version>12.0.0-SNAPSHOT</version>
-        <relativePath>/home/tom/idempiere/org.idempiere.parent</relativePath>
+        <relativePath/>
     </parent>
 
     <groupId>tw.idempiere</groupId>
@@ -17,7 +17,7 @@
     <packaging>jar</packaging>
 
     <name>iDempiere TW AI Assistant</name>
-    <description>AI-powered Q&A assistant for iDempiere ERP</description>
+    <description>AI-powered Q&amp;A assistant for iDempiere ERP</description>
 
     <properties>
         <idempiere.version>12.0.0-SNAPSHOT</idempiere.version>
@@ -39,16 +39,19 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- OSGi DS Annotations -->
+        <!-- OSGi Core -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.core</artifactId>
+            <version>6.0.0</version>
             <scope>provided</scope>
         </dependency>
 
+        <!-- OSGi DS Annotations -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.5.0</version>
             <scope>provided</scope>
         </dependency>
 
