@@ -22,6 +22,9 @@ os.environ.setdefault("DB_USER", "ai_readonly")
 os.environ.setdefault("SERVICE_PORT", "8900")
 os.environ.setdefault("MOCK_LLM", "true")
 
+# Configure pytest-asyncio
+pytest_plugins = ("pytest_asyncio",)
+
 
 @pytest.fixture(scope="session")
 def test_env():
