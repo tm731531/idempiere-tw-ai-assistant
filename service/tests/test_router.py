@@ -88,7 +88,7 @@ async def test_process_question_database_query(mock_router_deps):
     
     resp = await process_question(req)
     
-    assert resp.model_used == "llama_70b"  # Groq Llama 70B is now the primary model
+    assert resp.model_used == "sonnet"  # Claude Sonnet is the primary model
     assert resp.query_used == "top_customers_by_revenue"
     assert "王大明" in resp.answer  # PII should be unmasked
     assert resp.elapsed_ms >= 0

@@ -92,9 +92,9 @@ async def process_question(req: AskRequest) -> AskResponse:
     sanitized_question = masker.sanitize_input(req.question)
     logger.info("Sanitized question: %s", sanitized_question[:50])
     
-    # Step 2: Classify + select query (single Groq Llama 70B call)
-    # Primary model: Groq Llama 70B (Qwen temporarily disabled)
-    # Fallback: Groq Llama 8B for clarification
+    # Step 2: Classify + select query (single Claude Sonnet call)
+    # Primary model: Claude Sonnet (Anthropic)
+    # Fallback: Groq Llama 70B
     query_descriptions = get_query_descriptions()
     classify_prompt = CLASSIFY_AND_SELECT_PROMPT.format(
         query_descriptions=query_descriptions
@@ -146,12 +146,12 @@ async def process_question(req: AskRequest) -> AskResponse:
             question=sanitized_question,
         )
         
-        # Call LLM for answer (Groq Llama 70B)
+        # Call LLM for answer (Claude Sonnet)
         answer_text, tokens = await asyncio.to_thread(
-            caller.call, "llama_70b", answer_prompt, sanitized_question
+            caller.call, "sonnet", answer_prompt, sanitized_question
         )
         final_answer = masker.unmask(answer_text, mapping)
-        model_used = "llama_70b"
+        model_used = "sonnet"
         
     elif category == "general_knowledge":
         # No DB query needed
