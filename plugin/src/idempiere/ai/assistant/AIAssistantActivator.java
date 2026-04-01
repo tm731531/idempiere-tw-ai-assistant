@@ -25,10 +25,10 @@ public class AIAssistantActivator extends Incremental2PackActivator {
             + "AND r.IsActive = 'Y' "
             + "AND NOT EXISTS (SELECT 1 FROM AD_Process_Access pa "
             + "  WHERE pa.AD_Role_ID = r.AD_Role_ID AND pa.AD_Process_ID = p.AD_Process_ID)";
-        
+
         int count = DB.executeUpdate(sql, null);
         log.info("Granted AI Assistant process access to " + count + " roles");
-        
+
         // Grant menu access
         sql = "INSERT INTO AD_Menu_Access (AD_Menu_Access_UU, AD_Client_ID, AD_Org_ID, "
             + "AD_Role_ID, AD_Menu_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
@@ -39,8 +39,24 @@ public class AIAssistantActivator extends Incremental2PackActivator {
             + "AND r.IsActive = 'Y' "
             + "AND NOT EXISTS (SELECT 1 FROM AD_Menu_Access ma "
             + "  WHERE ma.AD_Role_ID = r.AD_Role_ID AND ma.AD_Menu_ID = m.AD_Menu_ID)";
-        
+
         count = DB.executeUpdate(sql, null);
         log.info("Granted AI Assistant menu access to " + count + " roles");
+
+        // Grant form access to all active roles (CRITICAL for AI Chat form to be accessible)
+        sql = "INSERT INTO AD_Form_Access (AD_Form_Access_UU, AD_Client_ID, AD_Org_ID, "
+            + "AD_Role_ID, AD_Form_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
+            + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, f.AD_Form_ID, 'Y', "
+            + "now(), 0, now(), 0, 'Y' "
+            + "FROM AD_Role r, AD_Form f "
+            + "WHERE f.ClassName = 'idempiere.ai.assistant.form.AIChatForm' "
+            + "AND r.IsActive = 'Y' "
+            + "AND NOT EXISTS (SELECT 1 FROM AD_Form_Access fa "
+            + "  WHERE fa.AD_Role_ID = r.AD_Role_ID AND fa.AD_Form_ID = f.AD_Form_ID)";
+
+        count = DB.executeUpdate(sql, null);
+        if (count > 0) {
+            log.info("Granted AI Chat form access to " + count + " roles");
+        }
     }
 }

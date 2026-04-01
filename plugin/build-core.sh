@@ -51,10 +51,13 @@ if [ $? -eq 0 ]; then
     
     # Copy OSGI-INF
     cp -r "$PLUGIN_DIR/OSGI-INF" "$TEMP_JAR_DIR/"
-    
-    # Copy META-INF except MANIFEST.MF (we'll add it separately)
-    mkdir -p "$TEMP_JAR_DIR/META-INF"
-    cp "$PLUGIN_DIR/META-INF/2Pack_1.0.0.zip" "$TEMP_JAR_DIR/META-INF/"
+
+    # Copy META-INF (MANIFEST.MF)
+    cp "$PLUGIN_DIR/META-INF/MANIFEST.MF" "$TEMP_JAR_DIR/META-INF/"
+
+    # Copy resources/META-INF (contains 2Pack)
+    mkdir -p "$TEMP_JAR_DIR/resources/META-INF"
+    cp "$PLUGIN_DIR/resources/META-INF/2Pack_1.0.0.zip" "$TEMP_JAR_DIR/resources/META-INF/"
     
     # Create JAR from temporary directory with custom MANIFEST.MF
     cd "$TEMP_JAR_DIR"

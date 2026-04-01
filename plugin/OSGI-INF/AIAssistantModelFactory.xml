@@ -4,6 +4,6 @@
     immediate="true">
     <implementation class="idempiere.ai.assistant.model.AIAssistantModelFactory"/>
     <service>
-        <provide interface="org.compiere.model.IModelFactory"/>
+        <provide interface="org.adempiere.base.IModelFactory"/>
     </service>
 </scr:component>
