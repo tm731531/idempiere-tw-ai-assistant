@@ -2,25 +2,20 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: iDempiere TW AI Assistant
 Bundle-SymbolicName: tw.idempiere.ai.assistant
-Bundle-Version: 1.0.0.qualifier
+Bundle-Version: 1.0.0
 Bundle-Activator: idempiere.ai.assistant.AIAssistantActivator
 Bundle-ClassPath: .
 Bundle-RequiredExecutionEnvironment: JavaSE-17
-Service-Component: OSGI-INF/*.xml
+Service-Component: OSGI-INF/AIAssistantModelFactory.xml
 Import-Package: com.google.gson,
  javax.crypto,
  javax.crypto.spec,
  org.adempiere.base,
  org.adempiere.exceptions,
+ org.adempiere.model,
  org.adempiere.plugin.utils,
  org.adempiere.pipo2,
- org.adempiere.webui,
- org.adempiere.webui.util,
  org.compiere.model,
  org.compiere.util,
  org.osgi.framework,
- org.osgi.service.component.annotations,
- org.zkoss.zk.ui,
- org.zkoss.zk.ui.event,
- org.zkoss.zk.ui.util,
- org.zkoss.zul
+ org.osgi.service.component.annotations

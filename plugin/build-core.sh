@@ -45,18 +45,16 @@ if [ $? -eq 0 ]; then
     cd "$CLASSES_DIR"
     
     # Create JAR with core classes only
-    jar cf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
+    cd "$CLASSES_DIR"
+    jar cfm "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
+        "$PLUGIN_DIR/META-INF/MANIFEST.MF" \
         idempiere/ai/assistant/AIAssistantActivator.class \
         idempiere/ai/assistant/model/*.class \
         idempiere/ai/assistant/service/*.class
     
     # Add OSGI-INF
-    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
-        -C "$PLUGIN_DIR" OSGI-INF/
-    
-    # Add MANIFEST.MF
-    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
-        -C "$PLUGIN_DIR/META-INF" MANIFEST.MF
+    cd "$PLUGIN_DIR"
+    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" OSGI-INF/
     
     echo ""
     echo "========================================="
