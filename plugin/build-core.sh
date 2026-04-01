@@ -53,6 +53,7 @@ if [ $? -eq 0 ]; then
     cp -r "$PLUGIN_DIR/OSGI-INF" "$TEMP_JAR_DIR/"
 
     # Copy META-INF (MANIFEST.MF)
+    mkdir -p "$TEMP_JAR_DIR/META-INF"
     cp "$PLUGIN_DIR/META-INF/MANIFEST.MF" "$TEMP_JAR_DIR/META-INF/"
 
     # Copy resources/META-INF (contains 2Pack)
