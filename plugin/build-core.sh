@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for AI Assistant plugin using iDempiere's build environment
+# Build script for AI Assistant plugin - Core only (no Form UI)
 
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$PLUGIN_DIR/build"
@@ -14,33 +14,17 @@ IDEMPIERE_PLUGINS="$IDEMPIERE_HOME/plugins"
 mkdir -p "$CLASSES_DIR"
 mkdir -p "$JAR_DIR"
 
-# Build classpath from iDempiere installation
-CLASSPATH="$IDEMPIERE_HOME/configuration/org.eclipse.osgi/1/data/.cp"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.adempiere.base_*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.adempiere.ui.zk_*/"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/zk_*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.zkoss.*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/gson-*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/javax.servlet-api-*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.osgi.core_*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/jul-to-slf4j-*.jar"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/slf4j-api-*.jar"
-
-# Add all JARs from plugins directory
+# Build classpath
+CLASSPATH=""
 for jar in "$IDEMPIERE_PLUGINS"/*.jar; do
     CLASSPATH="$CLASSPATH:$jar"
 done
-
-# Add ZK JARs
+CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.adempiere.ui.zk_*/"
 CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/zk_*/"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.zkoss.zk_*/"
-CLASSPATH="$CLASSPATH:$IDEMPIERE_PLUGINS/org.zkoss.zul_*/"
 
-echo "Classpath: $CLASSPATH"
-echo ""
-echo "Compiling Java sources..."
+echo "Compiling core classes (no Form UI)..."
 
-# Compile Java sources
+# Compile only core classes (no Form)
 javac -d "$CLASSES_DIR" \
     -cp "$CLASSPATH" \
     -source 17 \
@@ -51,9 +35,7 @@ javac -d "$CLASSES_DIR" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/model/AIAssistantModelFactory.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/HmacUtil.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatException.java" \
-    "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatService.java" \
-    "$PLUGIN_DIR/src/idempiere/ai/assistant/form/AIChatForm.java" \
-    "$PLUGIN_DIR/src/idempiere/ai/assistant/form/AIChatFormFactory.java"
+    "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatService.java"
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful!"
@@ -62,12 +44,11 @@ if [ $? -eq 0 ]; then
     echo "Creating JAR file..."
     cd "$CLASSES_DIR"
     
-    # Create JAR with all classes
+    # Create JAR with core classes only
     jar cf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
-        idempiere/ai/assistant/*.class \
+        idempiere/ai/assistant/AIAssistantActivator.class \
         idempiere/ai/assistant/model/*.class \
-        idempiere/ai/assistant/service/*.class \
-        idempiere/ai/assistant/form/*.class
+        idempiere/ai/assistant/service/*.class
     
     # Add OSGI-INF
     jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
@@ -79,13 +60,15 @@ if [ $? -eq 0 ]; then
     
     echo ""
     echo "========================================="
-    echo "Build complete!"
+    echo "Build complete! (Core only - no Form UI)"
     echo "JAR file: $JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar"
     echo "========================================="
     echo ""
+    echo "Note: This JAR does not include the Form UI."
+    echo "To add Form UI, the AIChatForm.java needs to be updated to match your iDempiere's ZK API version."
+    echo ""
     echo "To deploy:"
     echo "  cp $JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar $IDEMPIERE_HOME/plugins/"
-    echo "  # Then restart iDempiere or run: refresh * (in OSGi console)"
 else
     echo "Compilation failed!"
     exit 1
