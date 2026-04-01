@@ -6,8 +6,9 @@ fastapi>=0.115
 uvicorn>=0.34
 
 # LLM integration
-langchain-anthropic>=0.3
+# langchain-anthropic>=0.3  # Claude (kept for reference)
 langchain-groq>=0.2
+dashscope>=1.14  # Qwen (Alibaba DashScope)
 
 # Database
 psycopg2-binary>=2.9

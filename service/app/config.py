@@ -10,18 +10,26 @@ load_dotenv()
 # Set MOCK_LLM=true in .env for development/testing (no token cost)
 MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
 
-# API keys (not required when MOCK_LLM=true)
-# When MOCK_LLM=true, we use mock keys to avoid config errors
-ANTHROPIC_API_KEY = (
-    os.getenv("ANTHROPIC_API_KEY", "mock-key")
+# Qwen API key (Alibaba DashScope) - PRIMARY MODEL
+DASHSCOPE_API_KEY = (
+    os.getenv("DASHSCOPE_API_KEY", "mock-key")
     if MOCK_LLM
-    else os.environ["ANTHROPIC_API_KEY"]
+    else os.environ["DASHSCOPE_API_KEY"]
 )
+
+# Groq API key (for Llama fallback)
 GROQ_API_KEY = (
     os.getenv("GROQ_API_KEY", "mock-key")
     if MOCK_LLM
     else os.environ["GROQ_API_KEY"]
 )
+
+# Claude API key (kept for reference, not used)
+# ANTHROPIC_API_KEY = (
+#     os.getenv("ANTHROPIC_API_KEY", "mock-key")
+#     if MOCK_LLM
+#     else os.environ["ANTHROPIC_API_KEY"]
+# )
 
 # HMAC secret for authenticating requests from iDempiere plugin
 # MUST match the AI_HMAC_SECRET system property in iDempiere

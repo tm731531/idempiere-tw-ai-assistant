@@ -1,5 +1,8 @@
 # service/app/llm/prompts.py
-"""System prompts for LLM calls."""
+"""System prompts for LLM calls.
+
+Used with Qwen Max (primary) and Groq Llama (fallback).
+"""
 
 CLASSIFY_AND_SELECT_PROMPT = """You are an ERP data assistant for iDempiere. Given a user question and available queries, classify the question AND select the best matching query.
 

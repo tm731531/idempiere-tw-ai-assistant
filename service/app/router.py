@@ -92,7 +92,9 @@ async def process_question(req: AskRequest) -> AskResponse:
     sanitized_question = masker.sanitize_input(req.question)
     logger.info("Sanitized question: %s", sanitized_question[:50])
     
-    # Step 2: Classify + select query (single Sonnet call)
+    # Step 2: Classify + select query (single Qwen call)
+    # Primary model: Qwen Max (Alibaba DashScope)
+    # Fallback: Groq Llama 70B
     query_descriptions = get_query_descriptions()
     classify_prompt = CLASSIFY_AND_SELECT_PROMPT.format(
         query_descriptions=query_descriptions
@@ -144,14 +146,14 @@ async def process_question(req: AskRequest) -> AskResponse:
             question=sanitized_question,
         )
         
-        # Call LLM for answer
+        # Call LLM for answer (Qwen Max)
         answer_text, tokens = await asyncio.to_thread(
-            caller.call, "sonnet", answer_prompt, sanitized_question
+            caller.call, "qwen_max", answer_prompt, sanitized_question
         )
-        
+
         # Unmask PII
         final_answer = masker.unmask(answer_text, mapping)
-        model_used = "sonnet"
+        model_used = "qwen_max"
         
     elif category == "general_knowledge":
         # No DB query needed
