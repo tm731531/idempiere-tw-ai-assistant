@@ -55,11 +55,11 @@ if [ $? -eq 0 ]; then
     # Copy META-INF (MANIFEST.MF and 2Pack for Incremental2PackActivator)
     mkdir -p "$TEMP_JAR_DIR/META-INF"
     cp "$PLUGIN_DIR/META-INF/MANIFEST.MF" "$TEMP_JAR_DIR/META-INF/"
-    cp "$PLUGIN_DIR/META-INF/2Pack_1.0.0.zip" "$TEMP_JAR_DIR/META-INF/"
+    cp "$PLUGIN_DIR/META-INF/2Pack_1.0.1.zip" "$TEMP_JAR_DIR/META-INF/"
 
     # Copy resources/META-INF (contains 2Pack for reference)
     mkdir -p "$TEMP_JAR_DIR/resources/META-INF"
-    cp "$PLUGIN_DIR/resources/META-INF/2Pack_1.0.0.zip" "$TEMP_JAR_DIR/resources/META-INF/"
+    cp "$PLUGIN_DIR/resources/META-INF/2Pack_1.0.1.zip" "$TEMP_JAR_DIR/resources/META-INF/"
     
     # Create JAR from temporary directory with custom MANIFEST.MF
     cd "$TEMP_JAR_DIR"
