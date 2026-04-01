@@ -66,15 +66,17 @@ def test_ask_response_creation():
 
 @pytest.mark.asyncio
 async def test_process_question_database_query(mock_router_deps):
-    """Test database_query category."""
+    """Test database_query category - uses Claude Sonnet."""
     mock_caller, mock_executor = mock_router_deps
     
-    # Make caller return different responses for different calls
+    # Mock responses:
+    # 1. Router (Llama 8B) → "database_query"
+    # 2. Selector (Sonnet) → JSON with query name
+    # 3. Answer (Sonnet) → masked answer
     mock_caller.call.side_effect = [
-        # First call: classification
-        ('{"category": "database_query", "query_name": "top_customers_by_revenue", "params": {"limit": 5}}', 50),
-        # Second call: answer generation
-        ("[PII_C_001] 的營收最高，為 500000 元", 100),
+        ("database_query", 10),  # Router classification
+        ('{"query_name": "top_customers_by_revenue", "params": {"limit": 5}}', 50),  # Selector
+        ("[PII_C_001] 的營收最高，為 500000 元", 100),  # Answer
     ]
     
     req = AskRequest(
@@ -88,7 +90,7 @@ async def test_process_question_database_query(mock_router_deps):
     
     resp = await process_question(req)
     
-    assert resp.model_used == "sonnet"  # Claude Sonnet is the primary model
+    assert resp.model_used == "sonnet"  # Claude Sonnet for database queries
     assert resp.query_used == "top_customers_by_revenue"
     assert "王大明" in resp.answer  # PII should be unmasked
     assert resp.elapsed_ms >= 0
@@ -96,13 +98,15 @@ async def test_process_question_database_query(mock_router_deps):
 
 @pytest.mark.asyncio
 async def test_process_question_general_knowledge(mock_router_deps):
-    """Test general_knowledge category."""
+    """Test general_knowledge category - uses Llama 70B."""
     mock_caller, _ = mock_router_deps
+    
+    # Mock responses:
+    # 1. Router (Llama 8B) → "general_knowledge"
+    # 2. Answer (Llama 70B) → answer text
     mock_caller.call.side_effect = [
-        # Classification: general knowledge
-        ('{"category": "general_knowledge"}', 50),
-        # Answer
-        ("iDempiere 是一個 ERP 系統...", 80),
+        ("general_knowledge", 10),  # Router classification
+        ("iDempiere 是一個 ERP 系統...", 80),  # Answer
     ]
     
     req = AskRequest(
@@ -116,19 +120,21 @@ async def test_process_question_general_knowledge(mock_router_deps):
     
     resp = await process_question(req)
     
-    assert resp.model_used == "llama_8b"
+    assert resp.model_used == "llama_70b"  # Llama 70B for general knowledge
     assert resp.query_used is None
 
 
 @pytest.mark.asyncio
 async def test_process_question_clarification(mock_router_deps):
-    """Test clarification category."""
+    """Test clarification category - uses Llama 8B."""
     mock_caller, _ = mock_router_deps
+    
+    # Mock responses:
+    # 1. Router (Llama 8B) → "clarification"
+    # 2. Answer (Llama 8B) → clarification text
     mock_caller.call.side_effect = [
-        # Classification: clarification (invalid JSON)
-        ("I don't understand", 30),
-        # Clarification prompt
-        ("請問您能提供更多細節嗎？", 50),
+        ("clarification", 10),  # Router classification
+        ("請問您能提供更多細節嗎？", 50),  # Clarification
     ]
     
     req = AskRequest(
@@ -142,7 +148,7 @@ async def test_process_question_clarification(mock_router_deps):
     
     resp = await process_question(req)
     
-    assert resp.model_used == "llama_8b"
+    assert resp.model_used == "llama_8b"  # Llama 8B for clarification
     assert resp.query_used is None
 
 
@@ -150,9 +156,15 @@ async def test_process_question_clarification(mock_router_deps):
 async def test_process_question_injects_security_params(mock_router_deps):
     """Verify ad_client_id and org_ids are injected from request, not LLM."""
     mock_caller, mock_executor = mock_router_deps
+    
+    # Mock responses:
+    # 1. Router (Llama 8B) → "database_query"
+    # 2. Selector (Sonnet) → JSON with empty params (security params should be injected)
+    # 3. Answer (Sonnet) → answer text
     mock_caller.call.side_effect = [
-        ('{"category": "database_query", "query_name": "top_customers_by_revenue", "params": {}}', 50),
-        ("Answer", 100),
+        ("database_query", 10),  # Router classification
+        ('{"query_name": "top_customers_by_revenue", "params": {}}', 50),  # Selector
+        ("Answer", 100),  # Answer
     ]
     
     req = AskRequest(

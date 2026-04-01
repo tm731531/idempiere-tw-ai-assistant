@@ -1,40 +1,49 @@
 # service/app/llm/prompts.py
-"""System prompts for LLM calls.
+"""System prompts for LLM calls with intelligent routing."""
 
-Used with Qwen Max (primary) and Groq Llama (fallback).
-"""
+# Router prompt - uses cheap model (Llama 8B) for initial classification
+ROUTER_PROMPT = """You are a question classifier for iDempiere ERP. Classify the user's question into one of these categories:
 
-CLASSIFY_AND_SELECT_PROMPT = """You are an ERP data assistant for iDempiere. Given a user question and available queries, classify the question AND select the best matching query.
+**Categories:**
+1. "database_query" - Question asks about specific ERP data (orders, customers, revenue, etc.)
+2. "general_knowledge" - Question about general topics, ERP concepts, or non-data questions
+3. "clarification" - Question is too vague or needs more context
+
+**Examples:**
+- "上個月營收最高的客戶" → database_query
+- "什麼是 iDempiere?" → general_knowledge
+- "訂單" → clarification (too vague)
+- "幫我查一下 order" → clarification (which order?)
+
+User question: {question}
+
+Respond with ONLY the category name (database_query, general_knowledge, or clarification)."""
+
+# Query selector prompt - uses Claude Sonnet for complex matching
+QUERY_SELECTOR_PROMPT = """You are an ERP data expert. Given a user question and available queries, select the best matching query and extract parameters.
 
 Available queries:
 {query_descriptions}
 
-Response format (JSON):
+User question: {question}
+
+Respond in JSON format:
 {{
-  "category": "database_query" | "general_knowledge" | "clarification",
-  "query_name": "<query name if database_query, else null>",
-  "params": {{<extracted parameters if database_query, else null>}},
-  "reasoning": "<brief explanation>"
+  "query_name": "<best matching query name>",
+  "params": {{
+    "date_from": "YYYY-MM-DD or null",
+    "date_to": "YYYY-MM-DD or null",
+    "document_no": "string or null",
+    "year": "YYYY or null",
+    "limit": "number (default 5)"
+  }},
+  "confidence": "high/medium/low"
 }}
 
-Classification rules:
-- "database_query": Question can be answered by one of the available queries
-- "general_knowledge": Question is about general knowledge (not ERP data)
-- "clarification": Question is too vague or ambiguous, needs more info
+If no query matches well, set query_name to null."""
 
-For database_query, extract parameters from the question. Common parameters:
-- date_from, date_to: Dates in YYYY-MM-DD format
-- document_no: Order/document number
-- year: 4-digit year
-- limit: Number of results (default 5)
-- ad_client_id, org_ids: Will be injected automatically
-
-Example:
-User: "上個月營收最高的前 5 個客戶"
-Response: {{"category": "database_query", "query_name": "top_customers_by_revenue", "params": {{"date_from": "2026-02-01", "date_to": "2026-02-28", "limit": 5}}}}
-"""
-
-ANSWER_WITH_DATA_PROMPT = """You are an ERP data assistant. Based on the query results below, answer the user's question in {language}.
+# Answer generation prompts for different model types
+DATABASE_ANSWER_PROMPT = """You are an ERP data analyst. Based on the query results, answer the user's question in {language}.
 
 Query: {query_name}
 Results: {results}
@@ -44,27 +53,27 @@ User question: {question}
 Guidelines:
 - Answer in the same language as the question
 - Be concise and factual
-- Highlight key insights from the data
+- Highlight key insights (top values, trends, anomalies)
 - If results are empty, say so politely
-- Do not mention PII tokens like [PII_*] - they will be replaced automatically
-"""
+- Format numbers with thousand separators
+- Do not mention PII tokens - they will be replaced automatically"""
 
-GENERAL_KNOWLEDGE_PROMPT = """You are an ERP data assistant. Answer the user's question in {language}.
+GENERAL_KNOWLEDGE_PROMPT = """You are an ERP consultant. Answer the user's question in {language}.
 
 User question: {question}
 
 Guidelines:
-- Be helpful and concise
-- If the question is about iDempiere or ERP systems, provide accurate information
-- If you don't know, say so honestly
-"""
+- Be helpful and accurate
+- If about iDempiere/ERP, provide expert-level information
+- If unsure, say so honestly
+- Keep it concise but informative"""
 
-CLARIFICATION_PROMPT = """You are an ERP data assistant. The user's question is unclear. Politely ask for more details in {language}.
+CLARIFICATION_PROMPT = """You are a helpful assistant. The user's question needs clarification. Respond in {language}.
 
 User question: {question}
 
 Guidelines:
 - Be friendly and helpful
-- Suggest what information would help
-- Give examples of well-formed questions
-"""
+- Ask specific follow-up questions
+- Provide examples of well-formed questions
+- Suggest what information would help"""
