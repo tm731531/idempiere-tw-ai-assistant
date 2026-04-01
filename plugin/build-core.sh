@@ -36,7 +36,8 @@ javac -d "$CLASSES_DIR" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/HmacUtil.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatException.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatService.java" \
-    "$PLUGIN_DIR/src/idempiere/ai/assistant/process/AIAssistantTestProcess.java"
+    "$PLUGIN_DIR/src/idempiere/ai/assistant/process/AIAssistantTestProcess.java" \
+    "$PLUGIN_DIR/src/idempiere/ai/assistant/process/AIAssistantProcessFactory.java"
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful!"
