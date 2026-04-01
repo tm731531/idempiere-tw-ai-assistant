@@ -1,8 +1,8 @@
 # iDempiere TW AI Assistant - 實現狀態追蹤
 
-**最後更新:** 2026-04-01 08:23 (UTC+8)
+**最後更新:** 2026-04-01 08:35 (UTC+8)
 **當前階段:** Phase 1 - Python AI Service
-**整體進度:** 0/14 任務完成 (0%)
+**整體進度:** 1/14 任務完成 (7%)
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 任務 | 名稱 | 狀態 | 完成時間 | 負責人 |
 |------|------|------|----------|--------|
-| **Task 1** | Project Scaffold + Config | ⏳ PENDING | - | - |
+| **Task 1** | Project Scaffold + Config | ✅ COMPLETED | 2026-04-01 08:35 | Qwen Code |
 | **Task 2** | PII Masking Layer | ⏳ PENDING | - | - |
 | **Task 3** | Query Registry + Executor | ⏳ PENDING | - | - |
 | **Task 4** | LLM Caller + Fallback | ⏳ PENDING | - | - |
@@ -30,28 +30,37 @@
 ## 📝 詳細進度記錄
 
 ### Task 1: Project Scaffold + Config
-**狀態:** ⏳ PENDING  
+**狀態:** ✅ COMPLETED  
+**完成時間:** 2026-04-01 08:35  
+**負責人:** Qwen Code  
 **計劃文件:** `docs/superpowers/plans/2026-03-30-python-ai-service.md` (Task 1 章節)  
-**預計檔案:** 7 個
+**Git Commit:** `d73173d`
 
-#### 待辦清單
-- [ ] `service/requirements.txt`
-- [ ] `service/.env.example`
-- [ ] `service/app/__init__.py`
-- [ ] `service/app/config.py`
-- [ ] `service/tests/__init__.py`
-- [ ] `service/tests/conftest.py`
-- [ ] `.gitignore` (根目錄)
+#### 完成清單
+- [x] `service/requirements.txt` - FastAPI, langchain, psycopg2, pytest 等
+- [x] `service/.env.example` - 環境變數範本（MOCK_LLM=true 預設）
+- [x] `service/app/__init__.py` - 模組初始化
+- [x] `service/app/config.py` - 環境變數載入（支持 MOCK_LLM 模式）
+- [x] `service/tests/__init__.py` - 測試模組初始化
+- [x] `service/tests/conftest.py` - pytest fixtures（設置測試環境變數）
+- [x] `.gitignore` - Git 忽略規則
 
 #### 實作筆記
 ```
-（尚未開始）
+- 建立 Python 虛擬環境：service/venv/
+- 安裝所有依賴成功（pip install -r requirements.txt）
+- 驗證導入：fastapi, psycopg2, langchain_anthropic, langchain_groq 全部成功
+- conftest.py 在測試前設置環境變數，避免 config.py 崩潰
+- MOCK_LLM 預設為 true，開發測試不需 API key
 ```
 
 #### 測試驗證
-- [ ] `pip install -r requirements.txt` 成功
-- [ ] `python -c "import fastapi, psycopg2; print('OK')"` 通過
-- [ ] Git commit 完成
+- [x] `pip install -r requirements.txt` 成功
+- [x] `python -c "import fastapi, psycopg2; print('OK')"` 通過
+- [x] Git commit 完成
+
+#### 下一步
+繼續 Task 2: PII Masking Layer
 
 ---
 
@@ -286,8 +295,9 @@
 
 ```
 2026-04-01 08:23  專案啟動，開始實現 Task 1
-2026-04-01 ??:??  Task 1 完成 (預計)
-2026-04-01 ??:??  Task 2 完成 (預計)
+2026-04-01 08:35  Task 1 完成（Project Scaffold + Config）✅
+2026-04-01 ??:??  Task 2 完成（預計）
+2026-04-01 ??:??  Task 3 完成（預計）
 ...
 ```
 
