@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.idempiere</groupId>
+        <artifactId>org.adempiere.parent</artifactId>
+        <version>12.0.0-SNAPSHOT</version>
+        <relativePath>/home/tom/idempiere/org.idempiere.parent</relativePath>
+    </parent>
+
+    <groupId>tw.idempiere</groupId>
+    <artifactId>tw.idempiere.ai.assistant</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>iDempiere TW AI Assistant</name>
+    <description>AI-powered Q&A assistant for iDempiere ERP</description>
+
+    <properties>
+        <idempiere.version>12.0.0-SNAPSHOT</idempiere.version>
+    </properties>
+
+    <dependencies>
+        <!-- iDempiere Core -->
+        <dependency>
+            <groupId>org.idempiere</groupId>
+            <artifactId>org.adempiere.base</artifactId>
+            <version>${idempiere.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.idempiere</groupId>
+            <artifactId>org.adempiere.ui.zk</artifactId>
+            <version>${idempiere.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- OSGi DS Annotations -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.core</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- System-scoped iDempiere plugins -->
+        <dependency>
+            <groupId>org.adempiere</groupId>
+            <artifactId>org.adempiere.pipo</artifactId>
+            <version>12.0.0</version>
+            <scope>system</scope>
+            <systemPath>/opt/idempiere-server/x86_64/plugins/org.adempiere.pipo_12.0.0.*.jar</systemPath>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <sourceDirectory>src</sourceDirectory>
+        <resources>
+            <!-- Include OSGI-INF directory -->
+            <resource>
+                <directory>${project.basedir}</directory>
+                <includes>
+                    <include>OSGI-INF/**</include>
+                </includes>
+            </resource>
+            <!-- Include resources directory -->
+            <resource>
+                <directory>resources</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
