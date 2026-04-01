@@ -92,9 +92,9 @@ async def process_question(req: AskRequest) -> AskResponse:
     sanitized_question = masker.sanitize_input(req.question)
     logger.info("Sanitized question: %s", sanitized_question[:50])
     
-    # Step 2: Classify + select query (single Qwen call)
-    # Primary model: Qwen Max (Alibaba DashScope)
-    # Fallback: Groq Llama 70B
+    # Step 2: Classify + select query (single Groq Llama 70B call)
+    # Primary model: Groq Llama 70B (Qwen temporarily disabled)
+    # Fallback: Groq Llama 8B for clarification
     query_descriptions = get_query_descriptions()
     classify_prompt = CLASSIFY_AND_SELECT_PROMPT.format(
         query_descriptions=query_descriptions
@@ -146,14 +146,12 @@ async def process_question(req: AskRequest) -> AskResponse:
             question=sanitized_question,
         )
         
-        # Call LLM for answer (Qwen Max)
+        # Call LLM for answer (Groq Llama 70B)
         answer_text, tokens = await asyncio.to_thread(
-            caller.call, "qwen_max", answer_prompt, sanitized_question
+            caller.call, "llama_70b", answer_prompt, sanitized_question
         )
-
-        # Unmask PII
         final_answer = masker.unmask(answer_text, mapping)
-        model_used = "qwen_max"
+        model_used = "llama_70b"
         
     elif category == "general_knowledge":
         # No DB query needed

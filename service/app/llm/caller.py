@@ -24,13 +24,9 @@ def _is_mock_mode():
 
 
 # Model configurations with timeouts (25s < Java's 30s timeout)
-# Qwen Max: Alibaba's most powerful model
-# Groq Llama 70B: Fast fallback
+# Groq Llama 70B: Primary model (Qwen temporarily disabled)
+# Groq Llama 8B: Fast model for clarification
 MODEL_CONFIG = {
-    "qwen_max": {
-        "model": dashscope.Generation.Models.qwen_max,
-        "timeout": 25.0,
-    },
     "llama_70b": {
         "class": ChatGroq,
         "model": "llama-3.1-70b-versatile",
@@ -41,6 +37,11 @@ MODEL_CONFIG = {
         "model": "llama-3.1-8b-instant",
         "timeout": 25.0,
     },
+    # Qwen Max (Alibaba DashScope) - temporarily disabled
+    # "qwen_max": {
+    #     "model": dashscope.Generation.Models.qwen_max,
+    #     "timeout": 25.0,
+    # },
 }
 
 
@@ -91,8 +92,9 @@ class LLMCaller:
             return "Mock response - LLM call skipped in mock mode", 0
 
         # Determine fallback chain
-        if model_key == "qwen_max":
-            chain = ["qwen_max", "llama_70b"]
+        # Note: Qwen temporarily disabled, using Groq Llama 70B as primary
+        if model_key == "llama_70b":
+            chain = ["llama_70b"]  # No fallback needed for now
         elif model_key == "llama_8b":
             chain = ["llama_8b", "llama_70b"]
         else:
