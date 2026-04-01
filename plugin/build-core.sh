@@ -35,7 +35,8 @@ javac -d "$CLASSES_DIR" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/model/AIAssistantModelFactory.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/HmacUtil.java" \
     "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatException.java" \
-    "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatService.java"
+    "$PLUGIN_DIR/src/idempiere/ai/assistant/service/AIChatService.java" \
+    "$PLUGIN_DIR/src/idempiere/ai/assistant/process/AIAssistantTestProcess.java"
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful!"
@@ -50,7 +51,8 @@ if [ $? -eq 0 ]; then
         "$PLUGIN_DIR/META-INF/MANIFEST.MF" \
         idempiere/ai/assistant/AIAssistantActivator.class \
         idempiere/ai/assistant/model/*.class \
-        idempiere/ai/assistant/service/*.class
+        idempiere/ai/assistant/service/*.class \
+        idempiere/ai/assistant/process/*.class
     
     # Add OSGI-INF
     cd "$PLUGIN_DIR"
