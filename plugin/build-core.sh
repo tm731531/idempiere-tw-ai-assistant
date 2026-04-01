@@ -43,32 +43,33 @@ if [ $? -eq 0 ]; then
     
     # Create JAR
     echo "Creating JAR file..."
-    cd "$CLASSES_DIR"
     
-    # Create JAR with core classes only
+    # Create a temporary directory for JAR contents
+    TEMP_JAR_DIR=$(mktemp -d)
     cd "$CLASSES_DIR"
+    cp -r * "$TEMP_JAR_DIR/"
+    
+    # Copy OSGI-INF
+    cp -r "$PLUGIN_DIR/OSGI-INF" "$TEMP_JAR_DIR/"
+    
+    # Copy META-INF except MANIFEST.MF (we'll add it separately)
+    mkdir -p "$TEMP_JAR_DIR/META-INF"
+    cp "$PLUGIN_DIR/META-INF/2Pack_1.0.0.zip" "$TEMP_JAR_DIR/META-INF/"
+    
+    # Create JAR from temporary directory with custom MANIFEST.MF
+    cd "$TEMP_JAR_DIR"
     jar cfm "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" \
         "$PLUGIN_DIR/META-INF/MANIFEST.MF" \
-        idempiere/ai/assistant/AIAssistantActivator.class \
-        idempiere/ai/assistant/model/*.class \
-        idempiere/ai/assistant/service/*.class \
-        idempiere/ai/assistant/process/*.class
+        .
     
-    # Add OSGI-INF
-    cd "$PLUGIN_DIR"
-    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" OSGI-INF/
-    
-    # Add META-INF (contains 2Pack)
-    jar uf "$JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar" META-INF/
+    # Clean up
+    rm -rf "$TEMP_JAR_DIR"
     
     echo ""
     echo "========================================="
     echo "Build complete! (Core only - no Form UI)"
     echo "JAR file: $JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar"
     echo "========================================="
-    echo ""
-    echo "Note: This JAR does not include the Form UI."
-    echo "To add Form UI, the AIChatForm.java needs to be updated to match your iDempiere's ZK API version."
     echo ""
     echo "To deploy:"
     echo "  cp $JAR_DIR/tw.idempiere.ai.assistant-1.0.0-SNAPSHOT.jar $IDEMPIERE_HOME/plugins/"
