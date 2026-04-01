@@ -15,7 +15,7 @@ public class AIAssistantActivator extends Incremental2PackActivator {
 
     @Override
     protected void afterPackIn() {
-        // Grant all active roles access to the AI Assistant process
+        // Grant process access to all active roles
         String sql = "INSERT INTO AD_Process_Access (AD_Process_Access_UU, AD_Client_ID, AD_Org_ID, "
             + "AD_Role_ID, AD_Process_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
             + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, p.AD_Process_ID, 'Y', "
@@ -29,21 +29,9 @@ public class AIAssistantActivator extends Incremental2PackActivator {
         int count = DB.executeUpdate(sql, null);
         log.info("Granted AI Assistant process access to " + count + " roles");
 
-        // Grant menu access
-        sql = "INSERT INTO AD_Menu_Access (AD_Menu_Access_UU, AD_Client_ID, AD_Org_ID, "
-            + "AD_Role_ID, AD_Menu_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
-            + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, m.AD_Menu_ID, 'Y', "
-            + "now(), 0, now(), 0, 'Y' "
-            + "FROM AD_Role r, AD_Menu m "
-            + "WHERE m.Name = 'AI Assistant' "
-            + "AND r.IsActive = 'Y' "
-            + "AND NOT EXISTS (SELECT 1 FROM AD_Menu_Access ma "
-            + "  WHERE ma.AD_Role_ID = r.AD_Role_ID AND ma.AD_Menu_ID = m.AD_Menu_ID)";
-
-        count = DB.executeUpdate(sql, null);
-        log.info("Granted AI Assistant menu access to " + count + " roles");
-
-        // Grant form access to all active roles (CRITICAL for AI Chat form to be accessible)
+        // Grant form access to all active roles
+        // NOTE: There is NO ad_menu_access table in iDempiere.
+        // Menu access is controlled through AD_Process_Access and AD_Form_Access.
         sql = "INSERT INTO AD_Form_Access (AD_Form_Access_UU, AD_Client_ID, AD_Org_ID, "
             + "AD_Role_ID, AD_Form_ID, IsActive, Created, CreatedBy, Updated, UpdatedBy, IsReadWrite) "
             + "SELECT generate_uuid(), r.AD_Client_ID, 0, r.AD_Role_ID, f.AD_Form_ID, 'Y', "
