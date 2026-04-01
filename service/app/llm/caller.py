@@ -33,11 +33,13 @@ MODEL_CONFIG = {
     "llama_70b": {
         "class": ChatGroq,
         "model": "llama-3.1-70b-versatile",
+        "max_tokens": 4096,
         "timeout": 25.0,
     },
     "llama_8b": {
         "class": ChatGroq,
         "model": "llama-3.1-8b-instant",
+        "max_tokens": 2048,
         "timeout": 25.0,
     },
     # Qwen Max (Alibaba DashScope) - temporarily disabled
@@ -63,14 +65,20 @@ class LLMCaller:
         """Lazy-load model instances."""
         if model_key not in self._models:
             config = MODEL_CONFIG[model_key]
-            self._models[model_key] = config["class"](
-                model=config["model"],
-                timeout=config["timeout"],
-                api_key=(
+            # Build model kwargs
+            kwargs = {
+                "model": config["model"],
+                "timeout": config["timeout"],
+                "api_key": (
                     ANTHROPIC_API_KEY if config["class"] == ChatAnthropic
                     else GROQ_API_KEY
                 ),
-            )
+            }
+            # Add max_tokens for Groq models
+            if "max_tokens" in config:
+                kwargs["max_tokens"] = config["max_tokens"]
+            
+            self._models[model_key] = config["class"](**kwargs)
         return self._models[model_key]
 
     def call(self, model_key: str, system_prompt: str, user_content: str) -> tuple[str, int]:

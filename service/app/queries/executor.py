@@ -23,7 +23,7 @@ def init_pool(host, port, dbname, user, password):
         minconn=1, maxconn=5,
         host=host, port=port, dbname=dbname,
         user=user, password=password,
-        options="-c search_path=adempiere",  # iDempiere tables are in adempiere schema
+        options="-c search_path=adempiere -c statement_timeout=10000",  # 10s timeout prevents runaway queries
     )
 
 

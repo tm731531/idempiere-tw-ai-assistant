@@ -119,7 +119,7 @@ class ClarificationTool:
 def classify_node(state: AgentState) -> AgentState:
     """Classify the question using LLM (Llama 8B for cost efficiency)."""
     caller = _get_caller()
-    
+
     classification_prompt = f"""Classify this question into ONE category:
 
 Categories:
@@ -131,17 +131,22 @@ Question: {state['sanitized_question']}
 
 Respond with ONLY the category name (database_query, general_knowledge, or clarification)."""
 
-    category, tokens = asyncio.run(asyncio.to_thread(
-        caller.call, "llama_8b", "You are a classifier.", classification_prompt
-    ))
-    
-    category = category.strip().lower()
-    if category not in ["database_query", "general_knowledge", "clarification"]:
-        logger.warning("Invalid category '%s', defaulting to clarification", category)
+    # Note: No asyncio.to_thread needed - graph already runs in a worker thread
+    try:
+        category, tokens = caller.call(
+            "llama_8b", "You are a classifier.", classification_prompt
+        )
+        category = category.strip().lower()
+        if category not in ["database_query", "general_knowledge", "clarification"]:
+            logger.warning("Invalid category '%s', defaulting to clarification", category)
+            category = "clarification"
+    except Exception as e:
+        logger.error("Classification failed: %s", e)
         category = "clarification"
-    
+        tokens = 0
+
     logger.info("Classified as: %s", category)
-    
+
     return {
         **state,
         "category": category,
@@ -183,13 +188,13 @@ Respond in JSON format:
 
 If no query matches well, set query_name to null."""
 
-    selection_result, tokens = asyncio.run(asyncio.to_thread(
-        caller.call, "sonnet", "You are a query selector. Respond in JSON.", selector_prompt
-    ))
-    
+    selection_result, tokens = caller.call(
+        "sonnet", "You are a query selector. Respond in JSON.", selector_prompt
+    )
+
     try:
         selection = json.loads(selection_result)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, AttributeError, TypeError):
         logger.error("Failed to parse selection JSON")
         return {
             **state,
@@ -228,13 +233,13 @@ If no query matches well, set query_name to null."""
         question=state["sanitized_question"]
     )
     
-    answer_text, answer_tokens = asyncio.run(asyncio.to_thread(
-        caller.call, "sonnet", answer_prompt, state["sanitized_question"]
-    ))
-    
+    answer_text, answer_tokens = caller.call(
+        "sonnet", answer_prompt, state["sanitized_question"]
+    )
+
     # Unmask PII
     final_answer = masker.unmask(answer_text, pii_mapping)
-    
+
     return {
         **state,
         "query_name": query_name,
@@ -250,16 +255,16 @@ If no query matches well, set query_name to null."""
 def general_knowledge_node(state: AgentState) -> AgentState:
     """Handle general knowledge questions using Llama 70B."""
     caller = _get_caller()
-    
+
     answer_prompt = GENERAL_KNOWLEDGE_PROMPT.format(
         language=state["language"],
         question=state["sanitized_question"]
     )
-    
-    answer_text, tokens = asyncio.run(asyncio.to_thread(
-        caller.call, "llama_70b", answer_prompt, state["sanitized_question"]
-    ))
-    
+
+    answer_text, tokens = caller.call(
+        "llama_70b", answer_prompt, state["sanitized_question"]
+    )
+
     return {
         **state,
         "answer": answer_text,
@@ -271,16 +276,16 @@ def general_knowledge_node(state: AgentState) -> AgentState:
 def clarification_node(state: AgentState) -> AgentState:
     """Handle clarification requests using Llama 8B."""
     caller = _get_caller()
-    
+
     clarify_prompt = CLARIFICATION_PROMPT.format(
         language=state["language"],
         question=state["sanitized_question"]
     )
-    
-    answer_text, tokens = asyncio.run(asyncio.to_thread(
-        caller.call, "llama_8b", clarify_prompt, state["sanitized_question"]
-    ))
-    
+
+    answer_text, tokens = caller.call(
+        "llama_8b", clarify_prompt, state["sanitized_question"]
+    )
+
     return {
         **state,
         "answer": answer_text,
